@@ -121,8 +121,6 @@ body{background:#04090F;font-family:'Courier New',monospace;}
   <hr class="pdiv">
   <div class="tl">NODE 1‑4 BLACKWELL GPU (NCCL ACTIVE)</div>
   <div class="chart-wrap"><canvas id="gpu-chart" width="560" height="130"></canvas></div>
-  <div class="tl">NODE 1‑4 GRACE CPU (RERUN ACTIVE)</div>
-  <div class="chart-wrap"><canvas id="cpu-chart" width="560" height="130"></canvas></div>
 </div>
 
 <script type="importmap">
@@ -288,10 +286,13 @@ function thermalColor(f) {
     .lerp(new THREE.Color(THERM_COLS[Math.min(ci+1,n)]),cf);
 }
 
-// Create tube meshes
+// Create tube meshes — each tube gets its thermal colour from the corresponding OT entry
+// so colour is identical at baseline and optimised; only alignment changes.
 const tubeGroup = new THREE.Group(); scene.add(tubeGroup);
 const tubeData = BT.map((b,i)=>{
-  const mat = tubeMat(0x1A4880);
+  const ot=OT[i]||OT[OT.length-1];
+  const heat=ot.heat!==undefined?ot.heat:i/(NT-1);
+  const mat = tubeMat(thermalColor(heat));
   const mesh = cylinder(TR, b.L, mat);
   const d3   = new THREE.Vector3(...b.d).normalize();
   const half = d3.clone().multiplyScalar(b.L/2);
@@ -322,14 +323,28 @@ let BASE_PATHS = [
   [[-2.8,-1.1,-0.4],[ 0.1, 0.9, 0.9],[2.8, 0.1, 0.4]],
 ];
 
-// Optimised: straight aligned paths (fallback)
+// Optimised: mostly X-aligned paths with small per-tube wobble (realistic CNT, not robotically perfect)
 let OPT_PATHS = [];
 const OLZ = [-2.10,-1.26,-0.42,0.42,1.26,2.10];
-OLZ.forEach(lz=>{
-  [-1.65,-0.55,0.55,1.65].forEach(ty=>{
-    OPT_PATHS.push([new THREE.Vector3(-2.9,ty,lz), new THREE.Vector3(2.9,ty,lz)]);
+(()=>{
+  let seed=17;
+  const rng=()=>{seed=(seed*1664525+1013904223)&0xffffffff;return(seed>>>1)/0x7fffffff-1;};
+  OLZ.forEach(lz=>{
+    [-1.65,-0.55,0.55,1.65].forEach(ty=>{
+      // "Best achievable" state: tubes lean mostly along X but have visible angular spread
+      // and mid-arc bend — realistic for a ~100-iteration Bayesian optimisation run
+      const dy1=rng()*0.55, dz1=rng()*0.45;   // endpoint offsets
+      const dy2=rng()*0.55, dz2=rng()*0.45;
+      const mdy=rng()*0.35, mdz=rng()*0.28;   // mid-bow
+      OPT_PATHS.push([
+        new THREE.Vector3(-2.9, ty+dy1, lz+dz1),
+        new THREE.Vector3(-0.9, ty+mdy, lz+mdz),
+        new THREE.Vector3( 0.9, ty-mdy*0.6, lz-mdz*0.6),
+        new THREE.Vector3( 2.9, ty+dy2, lz+dz2),
+      ]);
+    });
   });
-});
+})();
 
 const NP = Math.max(BASE_PATHS.length, OPT_PATHS.length);
 while(BASE_PATHS.length<NP) BASE_PATHS.push(BASE_PATHS[0]);
@@ -432,7 +447,7 @@ finalComposer.addPass(mixPass);
 finalComposer.addPass(new OutputPass());
 
 // ── State data ────────────────────────────────────────────────────────────────
-let KEY = [[0,2.28e-5,0.0],[1,7.42e-6,0.12],[30,5.49e-6,0.65],[49,4.55e-6,1.0]];
+let KEY = [[0,2.28e-5,0.0],[1,7.42e-6,0.12],[30,5.49e-6,0.38],[49,4.55e-6,0.55]];
 const BR = 2.28e-5;
 let MAX_ITER = 49;
 let BEST_ITER = 49;
@@ -444,10 +459,13 @@ function getRth(it) {
   } return KEY[KEY.length-1][1];
 }
 function getOrder(it) {
-  for(let i=0;i<KEY.length-1;i++){
-    const[i0,r0,o0]=KEY[i],[i1,r1,o1]=KEY[i+1];
-    if(it>=i0&&it<=i1){let t=(it-i0)/(i1-i0);t=t*t*(3-2*t);return o0+t*(o1-o0);}
-  } return 1.0;
+  // Step function: hold alignment at the last keep ≤ it.
+  // Tubes only move when a new best R_th is confirmed; crashes/discards leave them unchanged.
+  let ord=KEY[0][2];
+  for(let i=0;i<KEY.length;i++){
+    if(KEY[i][0]<=it) ord=KEY[i][2]; else break;
+  }
+  return ord;
 }
 
 // ── Update scene state ─────────────────────────────────────────────────────────
@@ -469,15 +487,7 @@ function updateScene(order) {
     mesh.scale.y=L/mesh.geometry.parameters.height;
     mesh.scale.x=mesh.scale.z=1;
 
-    // Colour: metallic blue (baseline) → thermal gradient (optimised)
-    const blueC=new THREE.Color(0x1A4880);
-    const heat =o.heat!==undefined?o.heat:0.5;
-    const thermC=thermalColor(heat);
-    mat.color.lerpColors(blueC,thermC,order);
-    mat.emissive.set(0x000000);   // tubes NEVER glow — bloom is heat-path only
-    mat.emissiveIntensity=0;
-    mat.roughness=0.10;
-    mat.metalness=0.92;
+    // Colour is fixed at init (thermal gradient) — only geometry changes with order.
   });
 
   // ── Heat paths: morph chaotic → aligned ──
@@ -511,13 +521,13 @@ function updateHUD(iter) {
   document.getElementById('rth').style.color=rth<6e-6?'#00FF88':rth<1e-5?'#00D8FF':rth<2e-5?'#FF8800':'#FF3A3A';
   document.getElementById('lbl').textContent=
     iter===0?'BASELINE DESIGN  (HUMAN GUESS)':
-    iter===49?'AI-OPTIMIZED STRUCTURE  (ITERATION #49)':
-    `ITERATION ${iter}  /  49`;
+    iter===BEST_ITER?`AI-OPTIMIZED STRUCTURE  (ITERATION #${BEST_ITER})`:
+    `ITERATION ${iter}  /  ${MAX_ITER}`;
   document.getElementById('imp').textContent=`▼  ${imp.toFixed(1)}%  improvement vs baseline`;
-  document.getElementById('ilbl').textContent=`iter ${iter}/49`;
+  document.getElementById('ilbl').textContent=`iter ${iter}/${MAX_ITER}`;
   document.getElementById('sl').value=iter;
   document.getElementById('bBase').classList.toggle('on',iter===0);
-  document.getElementById('bOpt').classList.toggle('on',iter===49);
+  document.getElementById('bOpt').classList.toggle('on',iter===BEST_ITER);
 }
 
 // ── Render loop (two-pass selective bloom) ────────────────────────────────────
@@ -559,10 +569,9 @@ let RTH_PTS=[[0,2.28e-5],[1,7.42e-6],[8,2.10e-5],[15,8.91e-6],[22,6.83e-6],[30,5
 
 // Seeded PRNG
 function mulberry32(s){return()=>{s=(s+0x6D2B79F5)|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
-const _g=mulberry32(99), _c=mulberry32(42);
-const GPU_D=Array.from({length:5500},(_,i)=>{let v=84+(_g()-0.5)*8;if([350,720,1440,2160,2880,3600].some(s=>i>=s&&i<s+70))v*=0.30;return Math.max(8,Math.min(100,v));});
-const CPU_D=Array.from({length:5500},(_,i)=>{let v=60+(_c()-0.5)*14;if([350,720,1440,2160,2880,3600].some(s=>i>=s&&i<s+70))v=Math.min(100,v*1.35);return Math.max(15,Math.min(100,v));});
-function telSlice(it){const o=it*110;return[GPU_D.slice(o,o+5000).filter((_,i)=>i%10===0),CPU_D.slice(o,o+5000).filter((_,i)=>i%10===0)];}
+const _g=mulberry32(99);
+const GPU_D=Array.from({length:20000},(_,i)=>{let v=84+(_g()-0.5)*8;if([350,720,1440,2160,2880,3600,4320,5040,5760,6480,7200,7920].some(s=>i>=s&&i<s+70))v*=0.30;return Math.max(8,Math.min(100,v));});
+function telSlice(it){const o=Math.min(it*110,GPU_D.length-5000);return GPU_D.slice(o,o+5000).filter((_,i)=>i%10===0);}
 
 function drawSparkline(canvas,data,col){
   const ctx=canvas.getContext('2d'),W=canvas.width,H=canvas.height;
@@ -627,7 +636,7 @@ function drawRthChart(canvas,iter){
   ctx.clearRect(0,0,W,H);ctx.fillStyle='#050D18';ctx.fillRect(0,0,W,H);
   const pl=64,pr=12,pt=14,pb=38,cw=W-pl-pr,ch=H-pt-pb;
   const R0=4e-6,R1=2.4e-5;
-  const sx=i=>pl+(i/49)*cw, sy=r=>pt+ch*(1-(r-R0)/(R1-R0));
+  const sx=i=>pl+(i/MAX_ITER)*cw, sy=r=>pt+ch*(1-(r-R0)/(R1-R0));
   // grid + y labels
   ctx.font='bold 13px Courier New';
   [0.0,0.25,0.5,0.75,1.0].forEach(f=>{
@@ -643,9 +652,10 @@ function drawRthChart(canvas,iter){
   // axes
   ctx.strokeStyle='#2A5070';ctx.lineWidth=1.5;ctx.setLineDash([]);
   ctx.beginPath();ctx.moveTo(pl,pt);ctx.lineTo(pl,pt+ch);ctx.lineTo(pl+cw,pt+ch);ctx.stroke();
-  // x labels
+  // x labels — 6 evenly spaced ticks from 0 to MAX_ITER
+  const xTicks=(()=>{const t=[];const step=Math.ceil(MAX_ITER/5);for(let i=0;i<=MAX_ITER;i+=step)t.push(i);if(t[t.length-1]!==MAX_ITER)t.push(MAX_ITER);return t;})();
   ctx.font='bold 13px Courier New';ctx.fillStyle='#7AAAC8';ctx.textAlign='center';ctx.textBaseline='top';
-  [0,10,20,30,40,49].filter(i=>i<=iter).forEach(i=>{
+  xTicks.filter(i=>i<=iter).forEach(i=>{
     const x=sx(i);
     ctx.fillText(i,x,pt+ch+5);
     ctx.strokeStyle='#2A5070';ctx.lineWidth=1;
@@ -703,11 +713,9 @@ function updatePanels(iter){
   if(metEl) metEl.innerHTML=buildLogHTML(vis.slice(-3),false);
   const rc=document.getElementById('rth-chart');
   if(rc) drawRthChart(rc,iter);
-  const [gpu,cpu]=telSlice(iter);
+  const gpu=telSlice(iter);
   const gc=document.getElementById('gpu-chart');
-  const cc=document.getElementById('cpu-chart');
   if(gc) drawSparkline(gc,gpu,'#00FF88');
-  if(cc) drawSparkline(cc,cpu,'#30AAFF');
 }
 
 // ── Live state polling ────────────────────────────────────────────────────────
@@ -720,15 +728,24 @@ async function fetchState(){
 
     const base=s.baseline_rth||BR;
 
-    // Rebuild KEY (running-best alignment at each iteration)
-    const newKey=[];
-    let best=base;
+    // Rebuild KEY — keep-only entries, normalized so the three real keeps spread
+    // evenly across [0, 0.55]: tubes align progressively at each new best R_th.
+    let globalBest=base;
     for(const e of s.rth_history){
-      if(e.status==='keep'&&e.rth!==null)best=Math.min(best,e.rth);
-      const ord=Math.max(0,Math.min(1,(base-best)/base));
-      newKey.push([e.iter,best,ord]);
+      if(e.status==='keep'&&e.rth!==null) globalBest=Math.min(globalBest,e.rth);
     }
-    if(newKey.length>0)KEY=newKey;
+    const rthRange=Math.max(1e-12,base-globalBest);
+    const newKey=[[0,base,0]];
+    let runBest=base;
+    for(const e of s.rth_history){
+      if(e.iter===0)continue;
+      if(e.status==='keep'&&e.rth!==null){
+        runBest=Math.min(runBest,e.rth);
+        const ord=(base-runBest)/rthRange*0.55;
+        newKey.push([e.iter,runBest,ord]);
+      }
+    }
+    if(newKey.length>1)KEY=newKey;
 
     // Rebuild RTH_PTS (only entries with valid rth)
     const newRth=s.rth_history.filter(e=>e.rth!==null&&e.rth!==undefined)
@@ -778,11 +795,8 @@ async function fetchState(){
     const badge=document.getElementById('live-badge');
     if(badge)badge.style.display=s.from_cluster?'inline-block':'none';
 
-    // Auto-jump to current cluster iter when not animating
-    if(!animId){
-      const tgt=Math.max(0,Math.min(s.current_iter,MAX_ITER));
-      setIter(tgt);
-    }
+    // Never auto-jump; page always starts at baseline (iter 0).
+    // Slider max and KEY are updated silently so RUN AUTORESEARCH reflects live data.
   }catch(e){}
 }
 
