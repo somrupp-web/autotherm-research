@@ -361,6 +361,134 @@ def _parse_energy(edr_path, workdir, terms):
     return values
 
 
+# ── Filler geometry extraction ────────────────────────────────────────────────
+def _extract_filler_geometry(gro_path, box_l, eps_nm=0.55, min_cluster=4, max_tubes=24):
+    """
+    Read equilibrated .gro, cluster GR (filler) atoms by spatial proximity,
+    fit a cylinder axis to each cluster via power-iteration PCA.
+    Pure stdlib — no numpy or scipy required.
+    Returns list of dicts: {center, direction, length, radius, n_particles}
+    All spatial values normalised to [-0.5..0.5] relative to box_l.
+    """
+    import math
+
+    # ── Parse .gro for filler atom positions ─────────────────────────────────
+    pos = []
+    with open(gro_path) as f:
+        lines = f.readlines()
+    n_atoms = int(lines[1].strip())
+    for line in lines[2: 2 + n_atoms]:
+        if len(line) < 44:
+            continue
+        resname  = line[5:10].strip()
+        atomname = line[10:15].strip()
+        if resname == 'FILL' or atomname == 'GR':
+            try:
+                pos.append([float(line[20:28]), float(line[28:36]), float(line[36:44])])
+            except ValueError:
+                continue
+
+    if len(pos) < min_cluster:
+        return []
+    n = len(pos)
+
+    # ── Grid-based adjacency (O(n) binning, O(k) per cell) ───────────────────
+    cell = eps_nm
+    grid = {}
+    for i, p in enumerate(pos):
+        key = (int(p[0] / cell), int(p[1] / cell), int(p[2] / cell))
+        grid.setdefault(key, []).append(i)
+
+    adj = [set() for _ in range(n)]
+    for key, idxs in grid.items():
+        neighbors = []
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for dz in (-1, 0, 1):
+                    neighbors.extend(grid.get((key[0]+dx, key[1]+dy, key[2]+dz), []))
+        for i in idxs:
+            pi = pos[i]
+            for j in neighbors:
+                if j > i:
+                    pj = pos[j]
+                    d2 = (pi[0]-pj[0])**2 + (pi[1]-pj[1])**2 + (pi[2]-pj[2])**2
+                    if d2 < eps_nm * eps_nm:
+                        adj[i].add(j); adj[j].add(i)
+
+    # ── BFS connected components ──────────────────────────────────────────────
+    visited = [False] * n
+    clusters = []
+    for start in range(n):
+        if visited[start]:
+            continue
+        queue, comp = [start], [start]
+        visited[start] = True
+        while queue:
+            node = queue.pop()
+            for nb in adj[node]:
+                if not visited[nb]:
+                    visited[nb] = True
+                    comp.append(nb); queue.append(nb)
+        if len(comp) >= min_cluster:
+            clusters.append(comp)
+
+    if not clusters:
+        return []
+
+    # ── Power-iteration PCA helpers (pure Python, no numpy) ──────────────────
+    def _dot(a, b):
+        return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
+
+    def _matvec(M, v):
+        return [M[r][0]*v[0] + M[r][1]*v[1] + M[r][2]*v[2] for r in range(3)]
+
+    def _normalize(v):
+        n = math.sqrt(_dot(v, v))
+        return [x / n for x in v] if n > 1e-12 else [1.0, 0.0, 0.0]
+
+    def _dominant_axis(diffs):
+        """Return dominant eigenvector of covariance(diffs) via power iteration."""
+        k = len(diffs)
+        cov = [[sum(diffs[i][r] * diffs[i][c] for i in range(k)) / k
+                for c in range(3)] for r in range(3)]
+        # Start from [1,1,1]/sqrt(3) so no axis is in the null space
+        v = _normalize([1.0, 1.0, 1.0])
+        for _ in range(30):
+            v = _normalize(_matvec(cov, v))
+        return v
+
+    # ── Fit each cluster ──────────────────────────────────────────────────────
+    tubes = []
+    for comp in clusters:
+        pts = [pos[i] for i in comp]
+        k   = len(pts)
+        cx  = sum(p[0] for p in pts) / k
+        cy  = sum(p[1] for p in pts) / k
+        cz  = sum(p[2] for p in pts) / k
+        diffs = [[p[0]-cx, p[1]-cy, p[2]-cz] for p in pts]
+
+        axis  = _dominant_axis(diffs)
+        projs = [_dot(d, axis) for d in diffs]
+        length = max(projs) - min(projs)
+
+        # RMS radial distance from axis
+        radial_sq = [max(0.0, _dot(d,d) - _dot(d,axis)**2) for d in diffs]
+        radius = math.sqrt(sum(radial_sq) / k)
+
+        tubes.append({
+            'center':      [round(cx/box_l - 0.5, 4),
+                            round(cy/box_l - 0.5, 4),
+                            round(cz/box_l - 0.5, 4)],
+            'direction':   [round(v, 4) for v in axis],
+            'length':      round(length / box_l, 4),
+            'radius':      round(radius / box_l, 4),
+            'n_particles': k,
+        })
+
+    tubes.sort(key=lambda t: t['length'], reverse=True)
+    return tubes[:max_tubes]
+
+
 # ── Main simulation pipeline ──────────────────────────────────────────────────
 def run_simulation():
     workdir = tempfile.mkdtemp(prefix="gromacs_tim_")
@@ -474,6 +602,15 @@ def run_simulation():
         print(f"[prepare] Cross LJ energy: {total_cross:.3f} kJ/mol", flush=True)
         print(f"[prepare] Box area: {BOX_AREA:.2f} nm²", flush=True)
         print(f"[prepare] Thermal coupling: {thermal_coupling:.4f} kJ/mol/nm²", flush=True)
+
+        # ── Extract filler geometry from equilibrated snapshot ────────────────
+        try:
+            geom = _extract_filler_geometry(os.path.join(workdir, "eq.gro"), BOX_L)
+            import json as _json
+            print(f"nanotube_geometry: {_json.dumps(geom)}", flush=True)
+            print(f"[prepare] Nanotube clusters extracted: {len(geom)}", flush=True)
+        except Exception as _ge:
+            print(f"[prepare] Geometry extraction skipped: {_ge}", flush=True)
 
         return thermal_resistance, thermal_conductivity, sim_time_s
 

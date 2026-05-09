@@ -31,25 +31,41 @@ BASELINE_RTH  = 2.28e-5
 _state_cache = {"data": None, "ts": 0.0}
 _state_lock  = threading.Lock()
 
-def _fetch_results_tsv():
-    """Read results.tsv from cluster node0 via paramiko; fall back to local copy."""
+def _ssh_read(client, path):
+    """Read a remote file via an open paramiko client. Returns '' on missing."""
+    _, out, _ = client.exec_command(f"cat {path} 2>/dev/null")
+    return out.read().decode("utf-8", errors="replace").strip()
+
+def _fetch_cluster_data():
+    """Fetch results.tsv + nanotube geometry JSONs from cluster node0."""
     try:
         c = paramiko.SSHClient()
         c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         c.connect(CLUSTER_HOST, username=CLUSTER_USER, password=CLUSTER_PASS, timeout=5)
-        _, out, _ = c.exec_command(f"cat {CLUSTER_REPO}/results.tsv")
-        txt = out.read().decode("utf-8", errors="replace")
+        results   = _ssh_read(c, f"{CLUSTER_REPO}/results.tsv")
+        geom_best = _ssh_read(c, f"{CLUSTER_REPO}/nanotube_geometry_best.json")
+        geom_base = _ssh_read(c, f"{CLUSTER_REPO}/nanotube_geometry_baseline.json")
         c.close()
-        return txt, True
+        return results, geom_best, geom_base, True
     except Exception:
+        results = ""
         local = os.path.join(_HERE, "results.tsv")
         if os.path.exists(local):
             with open(local) as f:
-                return f.read(), False
-        return "", False
+                results = f.read()
+        geom_best = ""
+        geom_base = ""
+        for fname, var in [("nanotube_geometry_best.json", "best"),
+                           ("nanotube_geometry_baseline.json", "base")]:
+            p = os.path.join(_HERE, fname)
+            if os.path.exists(p):
+                with open(p) as f:
+                    if var == "best":  geom_best = f.read().strip()
+                    else:              geom_base = f.read().strip()
+        return results, geom_best, geom_base, False
 
 def _build_state():
-    content, live = _fetch_results_tsv()
+    content, geom_best_raw, geom_base_raw, live = _fetch_cluster_data()
     rows = []
     for line in content.splitlines():
         if not line.strip() or line.startswith("commit"):
@@ -76,16 +92,26 @@ def _build_state():
     n = len(rows)
     best_iter = max((i+1 for i,r in enumerate(rows) if r["status"]=="keep" and r["rth"] is not None),
                    default=0)
+
+    # Parse nanotube geometry JSONs (None if not yet available)
+    def _parse_geom(raw):
+        try:
+            return json.loads(raw) if raw else None
+        except Exception:
+            return None
+
     return {
-        "from_cluster":    live,
-        "running":         live and n < 50,
-        "current_iter":    n,
-        "total_iters":     max(50, n + 1),
-        "best_iter":       best_iter,
-        "baseline_rth":    BASELINE_RTH,
-        "best_rth":        running_best,
-        "alignment_order": round(alignment, 4),
-        "rth_history":     hist,
+        "from_cluster":          live,
+        "running":               live and n < 50,
+        "current_iter":          n,
+        "total_iters":           max(50, n + 1),
+        "best_iter":             best_iter,
+        "baseline_rth":          BASELINE_RTH,
+        "best_rth":              running_best,
+        "alignment_order":       round(alignment, 4),
+        "rth_history":           hist,
+        "nanotube_geometry_best":     _parse_geom(geom_best_raw),
+        "nanotube_geometry_baseline": _parse_geom(geom_base_raw),
     }
 
 def get_state():

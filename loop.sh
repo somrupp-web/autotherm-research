@@ -206,6 +206,8 @@ print('OK')
                 | sed 's/thermal_resistance:[[:space:]]*//' | head -1)
     SIM_TIME=$(grep -o 'sim_time_s:[[:space:]]*[0-9.]*' run.log \
                | sed 's/sim_time_s:[[:space:]]*//' | head -1)
+    NANOTUBE_GEOM=$(grep -m1 '^nanotube_geometry: ' run.log \
+                    | sed 's/^nanotube_geometry: //' || true)
 
     if [ -z "$THERMAL_R" ]; then
         log "WARNING: thermal_resistance not found in run.log — skipping."
@@ -217,6 +219,11 @@ print('OK')
 
     log "thermal_resistance=$THERMAL_R  best=$BEST_R  sim_time=${SIM_TIME}s"
 
+    # Save per-iteration geometry snapshot
+    if [ -n "$NANOTUBE_GEOM" ]; then
+        printf '%s\t%s\n' "$iter" "$NANOTUBE_GEOM" >> "$REPO_DIR/nanotube_geometry_history.tsv"
+    fi
+
     BETTER=$($PYTHON -c "
 try:    print('yes' if float('${THERMAL_R}') < float('${BEST_R}') else 'no')
 except: print('no')
@@ -225,11 +232,22 @@ except: print('no')
     if [ "$BETTER" = "yes" ]; then
         STATUS="keep"
         log "NEW BEST — keeping."
+        # Persist geometry for the new best iteration
+        if [ -n "$NANOTUBE_GEOM" ]; then
+            echo "$NANOTUBE_GEOM" > "$REPO_DIR/nanotube_geometry_best.json"
+            log "Saved nanotube geometry for new best (iter $iter)."
+        fi
     else
         STATUS="discard"
         log "No improvement — reverting."
         git reset HEAD~1
         cp "$REPO_DIR/structure.py.baseline" structure.py
+    fi
+
+    # Save baseline geometry once (iter 1 of node-0, first successful sim)
+    if [ ! -f "$REPO_DIR/nanotube_geometry_baseline.json" ] && [ -n "$NANOTUBE_GEOM" ]; then
+        echo "$NANOTUBE_GEOM" > "$REPO_DIR/nanotube_geometry_baseline.json"
+        log "Saved nanotube geometry for baseline simulation."
     fi
 
     DESC="node-${NODE_ID} iter-${iter}: ${HEADLINE:-TIM optimization}"
