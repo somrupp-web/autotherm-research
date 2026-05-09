@@ -1,0 +1,25 @@
+# Temporary Word files
+~$*
+~WRL*.tmp
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# GROMACS output (large simulation files)
+*.xtc
+*.trr
+*.edr
+*.tpr
+*.log
+*.gro
+mdout.mdp
+
+# Local results from cluster runs
+/tmp/
+
+# OS
+.DS_Store
+Thumbs.db
