@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AutoTherm 3D Viewer</title>
+<style>
+*,html,body{margin:0;padding:0;box-sizing:border-box;overflow:hidden;}
+body{background:#04090F;font-family:'Courier New',monospace;}
+#c{display:block;width:100vw;height:100vh;}
+
+#hud{
+  position:absolute;top:18px;left:50%;transform:translateX(-50%);
+  background:rgba(4,14,28,.82);border:1px solid #1E4060;
+  border-radius:10px;padding:12px 28px;text-align:center;
+  backdrop-filter:blur(10px);pointer-events:none;
+  min-width:480px;
+}
+#rth{font-size:22px;font-weight:bold;color:#00D8FF;letter-spacing:1px;}
+#lbl{font-size:12px;color:#5090B8;margin-top:4px;letter-spacing:.5px;}
+#imp{font-size:13px;color:#00FF88;margin-top:2px;}
+
+#ctrl{
+  position:absolute;bottom:22px;left:50%;transform:translateX(-50%);
+  display:flex;gap:12px;align-items:center;
+  background:rgba(4,14,28,.88);border:1px solid #1E4060;
+  border-radius:10px;padding:12px 22px;
+  backdrop-filter:blur(10px);
+}
+.btn{
+  background:#0A1828;color:#C8E8FF;border:1px solid #1E4060;
+  padding:8px 18px;border-radius:6px;cursor:pointer;
+  font-family:'Courier New',monospace;font-size:12px;
+  letter-spacing:.5px;transition:all .2s;user-select:none;
+}
+.btn:hover{background:#142436;border-color:#00D8FF;color:#00D8FF;}
+.btn.on{background:#00D8FF;color:#04090F;font-weight:bold;border-color:#00D8FF;}
+.btn.red{border-color:#FF4422;}
+.btn.red.on{background:#FF4422;border-color:#FF4422;}
+
+#sl{
+  -webkit-appearance:none;width:280px;height:4px;
+  background:#1E4060;border-radius:2px;outline:none;cursor:pointer;
+}
+#sl::-webkit-slider-thumb{
+  -webkit-appearance:none;width:16px;height:16px;
+  border-radius:50%;background:#00D8FF;cursor:pointer;
+}
+#ilbl{color:#5090B8;font-size:12px;min-width:50px;text-align:center;}
+
+/* ── Side panels ─────────────────────────────────────────────────────────── */
+#left-panel,#right-panel{
+  position:absolute;top:0;bottom:0;width:22vw;
+  background:rgba(4,9,15,0.93);
+  border:1px solid #1E4060;
+  backdrop-filter:blur(14px);
+  padding:20px 18px 14px;
+  display:flex;flex-direction:column;gap:0;
+  z-index:10;overflow:hidden;
+  font-family:'Courier New',monospace;
+  pointer-events:none;
+}
+#left-panel {left:0;border-left:none;border-top:none;border-bottom:none;}
+#right-panel{right:0;border-right:none;border-top:none;border-bottom:none;}
+
+.ptitle{
+  color:#00D8FF;font-size:15px;font-weight:bold;
+  letter-spacing:.7px;text-transform:uppercase;
+  margin-bottom:8px;
+}
+.pdiv{border:none;border-top:1px solid #1E4060;margin-bottom:11px;}
+.log-area{flex:0 0 auto;display:flex;flex-direction:column;gap:8px;overflow:hidden;}
+.le{border-left:4px solid #1E4060;padding:10px 13px;border-radius:4px;background:#070E18;}
+.le.best {border-left-color:#00FF88;background:#021408;}
+.le.crash{border-left-color:#FF3A3A;background:#140505;}
+.le.cur  {border-left-color:#00D8FF;background:#0A1A2C;}
+.lh{font-size:15px;font-weight:bold;color:#00D8FF;}
+.lh.best {color:#00FF88;}.lh.crash{color:#FF3A3A;}
+.ls{font-size:13px;color:#D8EEFF;margin-top:5px;}
+.ld{font-size:12px;color:#6090B8;margin-top:4px;line-height:1.45;}
+.tl{font-size:12.5px;color:#00D8FF;font-weight:bold;letter-spacing:.4px;margin:10px 0 5px;}
+.chart-wrap{width:100%;margin-bottom:8px;}
+.chart-wrap canvas{width:100%;height:auto;display:block;}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="hud">
+  <div id="rth">R_th = 2.280×10⁻⁵ m²K/W</div>
+  <div id="lbl">BASELINE DESIGN (HUMAN GUESS)</div>
+  <div id="imp">▼ 0.0% vs baseline</div>
+</div>
+
+<div id="ctrl">
+  <button class="btn on" id="bBase" onclick="goTo(0)">BASELINE</button>
+  <input type="range" id="sl" min="0" max="49" value="0" oninput="onSl(+this.value)">
+  <span id="ilbl">iter 0/49</span>
+  <button class="btn" id="bOpt" onclick="goTo(BEST_ITER)">AI OPTIMAL</button>
+  <button class="btn" id="bAnim" onclick="toggleAnim()">▶ RUN AUTORESEARCH</button>
+  <span id="live-badge" style="display:none;background:#00FF88;color:#020C04;font-family:'Courier New',monospace;font-size:11px;font-weight:bold;padding:3px 9px;border-radius:4px;letter-spacing:.6px;">● LIVE</span>
+</div>
+
+<!-- ── LEFT PANEL ─────────────────────────────────────────────────────────── -->
+<div id="left-panel">
+  <div class="ptitle">LLM (QWEN3.5‑122B) REASONING LOG</div>
+  <hr class="pdiv">
+  <div class="log-area" id="panel-log"></div>
+  <div style="flex:1 1 auto;min-height:8px;"></div>
+  <div class="ptitle">BEST THERMAL RESISTANCE (m²K/W)</div>
+  <hr class="pdiv">
+  <div class="chart-wrap"><canvas id="rth-chart" width="560" height="220"></canvas></div>
+</div>
+
+<!-- ── RIGHT PANEL ────────────────────────────────────────────────────────── -->
+<div id="right-panel">
+  <div class="ptitle">LLM LIVE METRICS</div>
+  <hr class="pdiv">
+  <div class="log-area" id="panel-metrics"></div>
+  <div style="flex:1 1 auto;min-height:8px;"></div>
+  <div class="ptitle">CLUSTER TELEMETRY</div>
+  <hr class="pdiv">
+  <div class="tl">NODE 1‑4 BLACKWELL GPU (NCCL ACTIVE)</div>
+  <div class="chart-wrap"><canvas id="gpu-chart" width="560" height="130"></canvas></div>
+  <div class="tl">NODE 1‑4 GRACE CPU (RERUN ACTIVE)</div>
+  <div class="chart-wrap"><canvas id="cpu-chart" width="560" height="130"></canvas></div>
+</div>
+
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import {EffectComposer}  from 'three/addons/postprocessing/EffectComposer.js';
+import {RenderPass}      from 'three/addons/postprocessing/RenderPass.js';
+import {UnrealBloomPass} from 'three/addons/postprocessing/UnrealBloomPass.js';
+import {ShaderPass}      from 'three/addons/postprocessing/ShaderPass.js';
+import {OutputPass}      from 'three/addons/postprocessing/OutputPass.js';
+import {OrbitControls}   from 'three/addons/controls/OrbitControls.js';
+import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
+
+// ── Renderer ─────────────────────────────────────────────────────────────────
+const canvas   = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true, powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
+renderer.toneMapping       = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.35;
+renderer.outputColorSpace  = THREE.SRGBColorSpace;
+
+// ── Scene / Camera ───────────────────────────────────────────────────────────
+const scene  = new THREE.Scene();
+scene.background = new THREE.Color(0x04090F);
+scene.fog = new THREE.FogExp2(0x04090F, 0.018);
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth/innerHeight, 0.1, 120);
+camera.position.set(11, 7.5, 11);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true; controls.dampingFactor = 0.06;
+controls.autoRotate = true;   controls.autoRotateSpeed = 3.0;
+controls.minDistance = 7;     controls.maxDistance = 28;
+controls.target.set(0,0,0);
+
+// ── Environment map (PBR reflections) ────────────────────────────────────────
+const pmrem   = new THREE.PMREMGenerator(renderer);
+const envMap  = pmrem.fromScene(new RoomEnvironment()).texture;
+scene.environment = envMap;
+
+// ── Lights ───────────────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x0D1E30, 1.2));
+
+const sunLight = new THREE.DirectionalLight(0xCCDDFF, 2.5);
+sunLight.position.set(8,14,6);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.set(2048,2048);
+scene.add(sunLight);
+
+const fillLight = new THREE.DirectionalLight(0x1A3A7A, 0.9);
+fillLight.position.set(-7,3,-9); scene.add(fillLight);
+
+const rimLight  = new THREE.PointLight(0x00D8FF, 1.2, 22);
+rimLight.position.set(-6,7,1); scene.add(rimLight);
+
+// Dynamic inner light — orange (baseline) → cyan (optimised)
+const innerLight = new THREE.PointLight(0xFF5500, 0.0, 14);
+innerLight.position.set(0,0,0); scene.add(innerLight);
+
+// ── Glass cube ────────────────────────────────────────────────────────────────
+const CS = 6.2;
+const cubeGeo = new THREE.BoxGeometry(CS,CS,CS);
+
+// Transparent faces
+const cubeMat = new THREE.MeshPhysicalMaterial({
+  color:0x4488CC, transparent:true, opacity:0.055,
+  roughness:0.22, metalness:0.08, side:THREE.DoubleSide,
+  transmission:0.92, thickness:0.3, ior:1.45, depthWrite:false,
+});
+scene.add(new THREE.Mesh(cubeGeo, cubeMat));
+
+// Glowing edge frame
+const edgesGeo = new THREE.EdgesGeometry(cubeGeo);
+const edgesMat = new THREE.LineBasicMaterial({color:0x0060AA, transparent:true, opacity:0.70});
+const edgeMesh = new THREE.LineSegments(edgesGeo, edgesMat);
+scene.add(edgeMesh);
+
+// ── Material library ──────────────────────────────────────────────────────────
+function tubeMat(col) {
+  return new THREE.MeshPhysicalMaterial({
+    color:new THREE.Color(col),
+    metalness:0.92, roughness:0.10,
+    clearcoat:1.0,  clearcoatRoughness:0.05,
+    reflectivity:0.95, envMapIntensity:1.4,
+  });
+}
+
+function heatMat(col) {
+  const c = new THREE.Color(col);
+  return new THREE.MeshStandardMaterial({
+    color:c.clone().multiplyScalar(0.4),
+    emissive:c, emissiveIntensity:2.8,
+    roughness:0.35, metalness:0.0,
+    transparent:true, opacity:0.82,
+  });
+}
+
+// ── Cylinder helper ───────────────────────────────────────────────────────────
+function cylinder(radius, length, mat) {
+  const g = new THREE.CylinderGeometry(radius, radius, length, 22, 1, false);
+  return new THREE.Mesh(g, mat);
+}
+function orient(mesh, p1, p2) {
+  const d = new THREE.Vector3().subVectors(p2,p1);
+  const L = d.length(); if(L<1e-8) return;
+  mesh.position.addVectors(p1,p2).multiplyScalar(0.5);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), d.normalize());
+  mesh.scale.y = L / mesh.geometry.parameters.height;
+}
+
+// ── Nanotube definitions ───────────────────────────────────────────────────────
+const H = CS/2;    // half-size = 3.1
+const TR = 0.22;   // tube radius
+
+// Baseline: 14 tubes in random orientations — all clipped to cube interior
+const BT = [
+  {c:[ 0.90, 0.50, 0.40],d:[ 0.80, 0.30, 0.50],L:2.30},
+  {c:[-0.60,-1.10, 0.10],d:[ 0.25, 0.75, 0.35],L:2.10},
+  {c:[ 0.25, 1.40,-1.25],d:[ 0.60,-0.15, 0.78],L:2.20},
+  {c:[-1.40, 0.40, 1.10],d:[-0.40, 0.65, 0.65],L:2.05},
+  {c:[ 1.60,-0.90,-0.50],d:[ 0.70, 0.55,-0.45],L:2.35},
+  {c:[ 0.00, 0.10, 1.40],d:[-0.20, 0.92, 0.33],L:2.00},
+  {c:[-1.50,-0.40,-1.00],d:[ 0.55,-0.52, 0.65],L:2.15},
+  {c:[ 1.10, 1.50,-0.60],d:[-0.78, 0.10, 0.62],L:2.25},
+  {c:[-0.40,-1.40, 0.90],d:[ 0.42, 0.80,-0.42],L:2.00},
+  {c:[ 1.40, 0.10, 1.60],d:[ 0.88,-0.28, 0.38],L:2.00},
+  {c:[-0.70, 1.20,-1.40],d:[-0.58, 0.40, 0.72],L:2.10},
+  {c:[ 0.50,-0.60,-0.90],d:[ 0.18, 0.60, 0.78],L:2.20},
+  {c:[-1.10, 1.00, 0.25],d:[ 0.65,-0.70, 0.30],L:1.95},
+  {c:[ 0.75,-1.50, 1.00],d:[-0.35, 0.85,-0.40],L:2.05},
+];
+
+// Optimised: 6 layers × 3 tubes aligned along X axis
+function makeOptTubes() {
+  const arr=[], lzs=[-2.10,-1.26,-0.42,0.42,1.26,2.10], ys=[-1.15,0,1.15];
+  lzs.forEach((lz,li)=>{
+    ys.forEach(ty=>{
+      arr.push({c:[0,ty,lz],d:[1,0,0],L:CS*0.86,heat:li/(lzs.length-1)});
+    });
+  });
+  return arr;
+}
+const OT = makeOptTubes();
+
+// Pad arrays to same length for morphing
+const NT = Math.max(BT.length, OT.length);
+while(BT.length<NT) BT.push(BT[BT.length-1]);
+while(OT.length<NT) OT.push(OT[OT.length-1]);
+
+// Thermal colour function (blue→cyan→green→yellow→orange→red)
+const THERM_COLS = [0x0022EE,0x0099FF,0x00FFCC,0xFFCC00,0xFF4400,0xFF0000];
+function thermalColor(f) {
+  const n=THERM_COLS.length-1, fi=f*n, ci=Math.floor(fi), cf=fi-ci;
+  return new THREE.Color(THERM_COLS[Math.min(ci,n)])
+    .lerp(new THREE.Color(THERM_COLS[Math.min(ci+1,n)]),cf);
+}
+
+// Create tube meshes
+const tubeGroup = new THREE.Group(); scene.add(tubeGroup);
+const tubeData = BT.map((b,i)=>{
+  const mat = tubeMat(0x1A4880);
+  const mesh = cylinder(TR, b.L, mat);
+  const d3   = new THREE.Vector3(...b.d).normalize();
+  const half = d3.clone().multiplyScalar(b.L/2);
+  const c3   = new THREE.Vector3(...b.c);
+  orient(mesh, c3.clone().sub(half), c3.clone().add(half));
+  tubeGroup.add(mesh);
+  return {mesh, mat};
+});
+
+// ── Heat paths ────────────────────────────────────────────────────────────────
+// Fire palette: bright yellow → orange → red
+const FIRE = [0xFFEE00, 0xFF9900, 0xFF3300, 0xCC0000];
+function fireColor(f) {
+  const n=FIRE.length-1, fi=f*n, ci=Math.floor(fi), cf=fi-ci;
+  return new THREE.Color(FIRE[Math.min(ci,n)])
+    .lerp(new THREE.Color(FIRE[Math.min(ci+1,n)]),cf);
+}
+
+// Baseline: chaotic CatmullRomCurve3 paths
+const BASE_PATHS = [
+  [[-2.8,-0.5,-2.2],[-1.2, 0.9,-0.8],[ 0.4,-0.5, 0.3],[1.6, 0.7, 1.8],[2.8, 1.0, 2.2]],
+  [[-2.8, 0.9,-0.8],[ 0.0,-1.3, 0.1],[1.2, 1.0, 1.0],[2.8,-0.6, 1.8]],
+  [[-2.8,-1.0, 0.6],[ 0.5, 1.2,-0.4],[2.8, 0.2,-0.8]],
+  [[-2.8, 0.6, 2.0],[-0.6,-0.9, 0.4],[1.2, 1.3,-0.6],[2.8,-0.4,-1.8]],
+  [[-2.8,-0.8, 1.4],[ 0.6, 0.6,-0.1],[2.8, 0.9,-1.4]],
+  [[-2.8, 1.3,-0.4],[ 0.2,-0.6, 1.1],[2.8, 0.4, 0.6]],
+  [[-2.8, 0.2, 1.8],[-1.0,-0.9, 0.1],[0.6, 1.1,-0.9],[2.8,-0.1,-1.8]],
+  [[-2.8,-1.1,-0.4],[ 0.1, 0.9, 0.9],[2.8, 0.1, 0.4]],
+];
+
+// Optimised: straight aligned paths running between nanotube rows in each layer
+const OPT_PATHS = [];
+const OLZ = [-2.10,-1.26,-0.42,0.42,1.26,2.10];
+OLZ.forEach(lz=>{
+  [-1.65,-0.55,0.55,1.65].forEach(ty=>{
+    OPT_PATHS.push([new THREE.Vector3(-2.9,ty,lz), new THREE.Vector3(2.9,ty,lz)]);
+  });
+});
+
+const NP = Math.max(BASE_PATHS.length, OPT_PATHS.length);
+while(BASE_PATHS.length<NP) BASE_PATHS.push(BASE_PATHS[0]);
+while(OPT_PATHS.length<NP)  OPT_PATHS.push(OPT_PATHS[0]);
+
+// Resample a curve to N points
+function resample(pts, N) {
+  const v3s = pts.map(p=> p instanceof THREE.Vector3 ? p : new THREE.Vector3(...p));
+  if(v3s.length===N) return v3s;
+  const curve = new THREE.CatmullRomCurve3(v3s);
+  return Array.from({length:N},(_,i)=>curve.getPoint(i/(N-1)));
+}
+
+// ── Selective bloom setup (must be before heatData so bloomMeshes is defined) ─
+const BLOOM_LAYER = 1;
+const bloomMeshes = new Set();
+const _savedMats = new Map();
+const _black = new THREE.MeshBasicMaterial({ color: 0x000000 });
+
+function _darken(obj) {
+  if (!obj.isMesh) return;
+  if (bloomMeshes.has(obj)) return;   // keep heat paths lit
+  _savedMats.set(obj.uuid, obj.material);
+  obj.material = _black;
+}
+function _restore(obj) {
+  if (!obj.isMesh) return;
+  const saved = _savedMats.get(obj.uuid);
+  if (saved) { obj.material = saved; _savedMats.delete(obj.uuid); }
+}
+
+const heatGroup = new THREE.Group(); scene.add(heatGroup);
+const heatData = BASE_PATHS.map((bp,i)=>{
+  const f   = i/(NP-1);
+  const col = fireColor(f);
+  const mat = heatMat('#'+col.getHexString());
+  const pts = resample(bp, 30).map(p=>new THREE.Vector3(...p));
+  const geo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts),50,0.055,8,false);
+  const mesh= new THREE.Mesh(geo, mat);
+  bloomMeshes.add(mesh);              // register for bloom-only pass
+  heatGroup.add(mesh);
+  return {mesh, mat, baseCtrl:bp, optCtrl:OPT_PATHS[i]};
+});
+
+// Bloom-only composer — renders offscreen (no custom RT; use internal ping-pong)
+const bloomComposer = new EffectComposer(renderer);
+bloomComposer.renderToScreen = false;
+bloomComposer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(innerWidth, innerHeight),
+  1.6,   // strength
+  0.6,   // radius
+  0.0    // threshold — fire emissive always exceeds this
+);
+bloomComposer.addPass(bloomPass);
+
+// Final composer — full scene + additive bloom
+// bloomComposer.renderTarget2 holds the bloom output after the ping-pong passes
+const MixShader = {
+  uniforms: { base: { value: null }, bloom: { value: bloomComposer.renderTarget2.texture } },
+  vertexShader: `varying vec2 vUv;
+    void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+  fragmentShader: `uniform sampler2D base,bloom;
+    varying vec2 vUv;
+    void main(){ gl_FragColor = texture2D(base,vUv) + texture2D(bloom,vUv); }`,
+};
+const finalComposer = new EffectComposer(renderer);
+finalComposer.addPass(new RenderPass(scene, camera));
+const mixPass = new ShaderPass(new THREE.ShaderMaterial(MixShader), 'base');
+finalComposer.addPass(mixPass);
+finalComposer.addPass(new OutputPass());
+
+// ── State data ────────────────────────────────────────────────────────────────
+let KEY = [[0,2.28e-5,0.0],[1,7.42e-6,0.12],[30,5.49e-6,0.65],[49,4.55e-6,1.0]];
+const BR = 2.28e-5;
+let MAX_ITER = 49;
+let BEST_ITER = 49;
+
+function getRth(it) {
+  for(let i=0;i<KEY.length-1;i++){
+    const[i0,r0,o0]=KEY[i],[i1,r1,o1]=KEY[i+1];
+    if(it>=i0&&it<=i1){let t=(it-i0)/(i1-i0);t=t*t*(3-2*t);return r0+t*(r1-r0);}
+  } return KEY[KEY.length-1][1];
+}
+function getOrder(it) {
+  for(let i=0;i<KEY.length-1;i++){
+    const[i0,r0,o0]=KEY[i],[i1,r1,o1]=KEY[i+1];
+    if(it>=i0&&it<=i1){let t=(it-i0)/(i1-i0);t=t*t*(3-2*t);return o0+t*(o1-o0);}
+  } return 1.0;
+}
+
+// ── Update scene state ─────────────────────────────────────────────────────────
+const Q0 = new THREE.Quaternion();
+function updateScene(order) {
+  // ── Tubes: slerp position/orientation between baseline ↔ optimised ──
+  tubeData.forEach(({mesh,mat},i)=>{
+    const b=BT[i], o=OT[i];
+    const bd=new THREE.Vector3(...b.d).normalize();
+    const od=new THREE.Vector3(...o.d).normalize();
+    const qb=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),bd);
+    const qo=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),od);
+    mesh.quaternion.slerpQuaternions(qb,qo,order);
+
+    const cb=new THREE.Vector3(...b.c), co=new THREE.Vector3(...o.c);
+    mesh.position.lerpVectors(cb,co,order);
+
+    const L=b.L+(o.L-b.L)*order;
+    mesh.scale.y=L/mesh.geometry.parameters.height;
+    mesh.scale.x=mesh.scale.z=1;
+
+    // Colour: metallic blue (baseline) → thermal gradient (optimised)
+    const blueC=new THREE.Color(0x1A4880);
+    const heat =o.heat!==undefined?o.heat:0.5;
+    const thermC=thermalColor(heat);
+    mat.color.lerpColors(blueC,thermC,order);
+    mat.emissive.set(0x000000);   // tubes NEVER glow — bloom is heat-path only
+    mat.emissiveIntensity=0;
+    mat.roughness=0.10;
+    mat.metalness=0.92;
+  });
+
+  // ── Heat paths: morph chaotic → aligned ──
+  heatData.forEach(({mesh,mat,baseCtrl,optCtrl},i)=>{
+    const f=i/(NP-1);
+    const bPts=resample(baseCtrl,18);
+    const oPts=resample(optCtrl,18);
+    const iPts=bPts.map((bp,k)=>new THREE.Vector3().lerpVectors(bp,oPts[k],order));
+    const geo=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(iPts),60,0.055,8,false);
+    mesh.geometry.dispose();
+    mesh.geometry=geo;
+    mat.emissiveIntensity=2.8+order*2.5;
+    mat.opacity=0.78+order*0.17;
+  });
+
+  // ── Cube edge colour: dim blue → bright cyan ──
+  edgesMat.color.lerpColors(new THREE.Color(0x004488),new THREE.Color(0x00D8FF),order);
+  edgesMat.opacity=0.65+order*0.25;
+
+  // ── Lighting ──
+  innerLight.intensity=order*2.5;
+  innerLight.color.lerpColors(new THREE.Color(0xFF5500),new THREE.Color(0x00BBFF),order);
+  bloomPass.strength=1.6+order*0.8;  // more glow on aligned paths when optimised
+}
+
+// ── HUD update ────────────────────────────────────────────────────────────────
+function updateHUD(iter) {
+  const rth=getRth(iter), imp=Math.max(0,(BR-rth)/BR*100);
+  const e=n=>rth.toExponential(3).replace('e','×10').replace('-','⁻').replace('+','');
+  document.getElementById('rth').textContent=`R_th = ${rth.toExponential(3)} m²K/W`;
+  document.getElementById('rth').style.color=rth<6e-6?'#00FF88':rth<1e-5?'#00D8FF':rth<2e-5?'#FF8800':'#FF3A3A';
+  document.getElementById('lbl').textContent=
+    iter===0?'BASELINE DESIGN  (HUMAN GUESS)':
+    iter===49?'AI-OPTIMIZED STRUCTURE  (ITERATION #49)':
+    `ITERATION ${iter}  /  49`;
+  document.getElementById('imp').textContent=`▼  ${imp.toFixed(1)}%  improvement vs baseline`;
+  document.getElementById('ilbl').textContent=`iter ${iter}/49`;
+  document.getElementById('sl').value=iter;
+  document.getElementById('bBase').classList.toggle('on',iter===0);
+  document.getElementById('bOpt').classList.toggle('on',iter===49);
+}
+
+// ── Render loop (two-pass selective bloom) ────────────────────────────────────
+const clock=new THREE.Clock();
+let curOrder=0, tgtOrder=0;
+
+function render() {
+  requestAnimationFrame(render);
+  const dt=clock.getDelta();
+  controls.update();
+  curOrder += (tgtOrder-curOrder)*Math.min(1,dt*3.5);
+  updateScene(curOrder);
+  rimLight.intensity=1.2+Math.sin(clock.getElapsedTime()*0.9)*0.1;
+
+  // Pass 1: darken everything except heat paths → bloom pass → offscreen RT
+  scene.traverse(_darken);
+  bloomComposer.render();
+  scene.traverse(_restore);
+
+  // Pass 2: full scene + additive bloom texture → screen
+  finalComposer.render();
+}
+render();
+
+// ── Panel data & helpers ─────────────────────────────────────────────────────
+let LOG_PANEL=[
+  {it:0,  head:'ITER #0 — BASELINE',     sub:'metal=60%  filler=25%  ε_mf=3.50',               desc:'Disordered CNT network. High phonon scattering at random interfaces.'},
+  {it:1,  head:'ITER #1  ★ NEW BEST',    sub:'ε_mf=6.0   filler=30%',                           desc:'Strengthening cross-interactions. Percolation network begins forming.'},
+  {it:8,  head:'ITER #8  ⚠ CRASH',       sub:'T=300K experiment',                                desc:'grompp(eq) failed — topology diverged. Reverting to 350K.'},
+  {it:15, head:'ITER #15',               sub:'σ(metal-filler)=0.310  ε_mf=6.5',                desc:'Atomic size matching improved. Recovery from crash confirmed.'},
+  {it:22, head:'ITER #22',               sub:'ε_mf=7.0  ε_mb=5.5  ε_fb=4.0',                  desc:'Maximum cross-coupling test. Regime nearing saturation.'},
+  {it:30, head:'ITER #30  ★ NEW BEST',   sub:'metal=53%  filler=32%  binder=15%',               desc:'Hexagonal percolation confirmed. 26% improvement on previous best.'},
+  {it:38, head:'ITER #38',               sub:'SIM_TIME=200ps  (same composition)',               desc:'Extended simulation for phonon statistics.'},
+  {it:44, head:'ITER #44',               sub:'ε_mf=7.0  ε_mb=6.0  ε_fb=5.0',                  desc:'Max cross-coupling confirmed. Converging toward optimum.'},
+  {it:49, head:'ITER #49  ★ OPTIMAL',    sub:'metal=53%  filler=32%  ε_mf=7.0  ε_mb=6.0',     desc:'Self-assembled hexagonal CNT layers. 5× improvement over baseline.'},
+];
+let P_BEST=new Set([1,30,49]); let P_CRASH=new Set([8]);
+let RTH_PTS=[[0,2.28e-5],[1,7.42e-6],[8,2.10e-5],[15,8.91e-6],[22,6.83e-6],[30,5.49e-6],[38,5.71e-6],[44,5.12e-6],[49,4.55e-6]];
+
+// Seeded PRNG
+function mulberry32(s){return()=>{s=(s+0x6D2B79F5)|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+const _g=mulberry32(99), _c=mulberry32(42);
+const GPU_D=Array.from({length:5500},(_,i)=>{let v=84+(_g()-0.5)*8;if([350,720,1440,2160,2880,3600].some(s=>i>=s&&i<s+70))v*=0.30;return Math.max(8,Math.min(100,v));});
+const CPU_D=Array.from({length:5500},(_,i)=>{let v=60+(_c()-0.5)*14;if([350,720,1440,2160,2880,3600].some(s=>i>=s&&i<s+70))v=Math.min(100,v*1.35);return Math.max(15,Math.min(100,v));});
+function telSlice(it){const o=it*110;return[GPU_D.slice(o,o+5000).filter((_,i)=>i%10===0),CPU_D.slice(o,o+5000).filter((_,i)=>i%10===0)];}
+
+function drawSparkline(canvas,data,col){
+  const ctx=canvas.getContext('2d'),W=canvas.width,H=canvas.height;
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#050D18';ctx.fillRect(0,0,W,H);
+
+  // Layout margins to fit axis labels
+  const pl=52, pr=14, pt=14, pb=34;
+  const cw=W-pl-pr, ch=H-pt-pb;
+
+  // Horizontal grid lines + Y-axis labels
+  ctx.font='bold 14px Courier New';
+  [['100%',1.0],['75%',0.75],['50%',0.5],['25%',0.25],['0%',0.0]].forEach(([lbl,f])=>{
+    const y=pt+ch*(1-f);
+    ctx.strokeStyle='#142030';ctx.lineWidth=f===0||f===1?1:0.6;
+    ctx.setLineDash(f===0||f===1?[]:[4,4]);
+    ctx.beginPath();ctx.moveTo(pl,y);ctx.lineTo(pl+cw,y);ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle='#7AAAC8';ctx.textAlign='right';ctx.textBaseline='middle';
+    ctx.fillText(lbl,pl-6,y);
+  });
+
+  // Y-axis line
+  ctx.strokeStyle='#2A5070';ctx.lineWidth=1.5;ctx.setLineDash([]);
+  ctx.beginPath();ctx.moveTo(pl,pt);ctx.lineTo(pl,pt+ch);ctx.stroke();
+  // X-axis line
+  ctx.beginPath();ctx.moveTo(pl,pt+ch);ctx.lineTo(pl+cw,pt+ch);ctx.stroke();
+
+  // X-axis labels (time steps: 0 … 500 data points representing ~5000 sim steps)
+  const nTicks=5;
+  ctx.fillStyle='#7AAAC8';ctx.textAlign='center';ctx.textBaseline='top';
+  for(let i=0;i<=nTicks;i++){
+    const x=pl+(i/nTicks)*cw;
+    const lbl=(i/nTicks*5000).toFixed(0);
+    ctx.fillText(lbl,x,pt+ch+6);
+    ctx.strokeStyle='#2A5070';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(x,pt+ch);ctx.lineTo(x,pt+ch+4);ctx.stroke();
+  }
+
+  // X-axis title
+  ctx.fillStyle='#5090B8';ctx.font='12px Courier New';
+  ctx.textAlign='center';ctx.textBaseline='bottom';
+  ctx.fillText('Simulation steps',pl+cw/2,H);
+
+  // Data — map to plot area
+  const xs=data.map((_,i)=>pl+i/(data.length-1)*cw);
+  const ys=data.map(v=>pt+ch*(1-Math.min(1,Math.max(0,v/100))));
+
+  // Fill
+  ctx.beginPath();ctx.moveTo(xs[0],pt+ch);
+  xs.forEach((x,i)=>ctx.lineTo(x,ys[i]));
+  ctx.lineTo(xs[xs.length-1],pt+ch);ctx.closePath();
+  ctx.fillStyle=col+'2E';ctx.fill();
+
+  // Line
+  ctx.beginPath();xs.forEach((x,i)=>i===0?ctx.moveTo(x,ys[i]):ctx.lineTo(x,ys[i]));
+  ctx.strokeStyle=col;ctx.lineWidth=1.6;ctx.stroke();
+}
+
+function drawRthChart(canvas,iter){
+  const ctx=canvas.getContext('2d'),W=canvas.width,H=canvas.height;
+  ctx.clearRect(0,0,W,H);ctx.fillStyle='#050D18';ctx.fillRect(0,0,W,H);
+  const pl=64,pr=12,pt=14,pb=38,cw=W-pl-pr,ch=H-pt-pb;
+  const R0=4e-6,R1=2.4e-5;
+  const sx=i=>pl+(i/49)*cw, sy=r=>pt+ch*(1-(r-R0)/(R1-R0));
+  // grid + y labels
+  ctx.font='bold 13px Courier New';
+  [0.0,0.25,0.5,0.75,1.0].forEach(f=>{
+    const r=R1-f*(R1-R0), y=pt+ch*f;
+    ctx.strokeStyle=f===0||f===1?'#2A5070':'#0E2030';
+    ctx.lineWidth=f===0||f===1?1:0.6;
+    ctx.setLineDash(f===0||f===1?[]:[4,4]);
+    ctx.beginPath();ctx.moveTo(pl,y);ctx.lineTo(pl+cw,y);ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle='#7AAAC8';ctx.textAlign='right';ctx.textBaseline='middle';
+    ctx.fillText(r.toExponential(0),pl-5,y);
+  });
+  // axes
+  ctx.strokeStyle='#2A5070';ctx.lineWidth=1.5;ctx.setLineDash([]);
+  ctx.beginPath();ctx.moveTo(pl,pt);ctx.lineTo(pl,pt+ch);ctx.lineTo(pl+cw,pt+ch);ctx.stroke();
+  // x labels
+  ctx.font='bold 13px Courier New';ctx.fillStyle='#7AAAC8';ctx.textAlign='center';ctx.textBaseline='top';
+  [0,10,20,30,40,49].filter(i=>i<=iter).forEach(i=>{
+    const x=sx(i);
+    ctx.fillText(i,x,pt+ch+5);
+    ctx.strokeStyle='#2A5070';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(x,pt+ch);ctx.lineTo(x,pt+ch+4);ctx.stroke();
+  });
+  // x-axis title
+  ctx.fillStyle='#5090B8';ctx.font='12px Courier New';ctx.textAlign='center';ctx.textBaseline='bottom';
+  ctx.fillText('Iteration',pl+cw/2,H);
+  // y-axis title (rotated)
+  ctx.save();ctx.translate(13,pt+ch/2);ctx.rotate(-Math.PI/2);
+  ctx.fillStyle='#5090B8';ctx.font='12px Courier New';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText('R_th (m²K/W)',0,0);ctx.restore();
+  const vis=RTH_PTS.filter(([i])=>i<=iter);
+  if(!vis.length)return;
+  // fill
+  ctx.beginPath();ctx.moveTo(sx(vis[0][0]),pt+ch);
+  vis.forEach(([i,r])=>ctx.lineTo(sx(i),sy(r)));
+  ctx.lineTo(sx(vis[vis.length-1][0]),pt+ch);ctx.closePath();
+  ctx.fillStyle='#00D8FF1A';ctx.fill();
+  // line
+  ctx.beginPath();vis.forEach(([i,r],k)=>k?ctx.lineTo(sx(i),sy(r)):ctx.moveTo(sx(i),sy(r)));
+  ctx.strokeStyle='#00D8FF';ctx.lineWidth=1.8;ctx.stroke();
+  // dots
+  vis.forEach(([i,r])=>{
+    const fc=P_BEST.has(i)?'#00FF88':P_CRASH.has(i)?'#FF3A3A':'#5090B8';
+    ctx.beginPath();ctx.arc(sx(i),sy(r),4,0,Math.PI*2);ctx.fillStyle=fc;ctx.fill();
+    if(P_BEST.has(i)){
+      ctx.fillStyle='#00FF88';ctx.font='bold 12px Courier New';
+      ctx.textAlign='center';ctx.textBaseline='bottom';
+      ctx.fillText(r.toExponential(1),sx(i),sy(r)-5);
+    }
+  });
+  // cursor
+  const rc=getRth(iter);
+  ctx.beginPath();ctx.arc(sx(iter),sy(rc),6,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();
+  ctx.beginPath();ctx.arc(sx(iter),sy(rc),4,0,Math.PI*2);ctx.fillStyle='#00D8FF';ctx.fill();
+}
+
+function buildLogHTML(entries,showDesc){
+  return entries.slice().reverse().map(e=>{
+    const cl=P_BEST.has(e.it)?'best':P_CRASH.has(e.it)?'crash':'cur';
+    return `<div class="le ${cl}"><div class="lh ${cl}">${e.head}</div>`
+      +`<div class="ls">${e.sub}</div>`
+      +(showDesc?`<div class="ld">${e.desc}</div>`:'')
+      +`</div>`;
+  }).join('');
+}
+
+function updatePanels(iter){
+  const vis=LOG_PANEL.filter(e=>e.it<=iter);
+  const recent=vis.slice(-4);
+  const logEl=document.getElementById('panel-log');
+  if(logEl) logEl.innerHTML=buildLogHTML(recent,true);
+  const metEl=document.getElementById('panel-metrics');
+  if(metEl) metEl.innerHTML=buildLogHTML(vis.slice(-3),false);
+  const rc=document.getElementById('rth-chart');
+  if(rc) drawRthChart(rc,iter);
+  const [gpu,cpu]=telSlice(iter);
+  const gc=document.getElementById('gpu-chart');
+  const cc=document.getElementById('cpu-chart');
+  if(gc) drawSparkline(gc,gpu,'#00FF88');
+  if(cc) drawSparkline(cc,cpu,'#30AAFF');
+}
+
+// ── Live state polling ────────────────────────────────────────────────────────
+async function fetchState(){
+  try{
+    const resp=await fetch('/state.json?_='+Date.now(),{signal:AbortSignal.timeout(4000)});
+    if(!resp.ok)return;
+    const s=await resp.json();
+    if(!s.rth_history||s.rth_history.length===0)return;
+
+    const base=s.baseline_rth||BR;
+
+    // Rebuild KEY (running-best alignment at each iteration)
+    const newKey=[];
+    let best=base;
+    for(const e of s.rth_history){
+      if(e.status==='keep'&&e.rth!==null)best=Math.min(best,e.rth);
+      const ord=Math.max(0,Math.min(1,(base-best)/base));
+      newKey.push([e.iter,best,ord]);
+    }
+    if(newKey.length>0)KEY=newKey;
+
+    // Rebuild RTH_PTS (only entries with valid rth)
+    const newRth=s.rth_history.filter(e=>e.rth!==null&&e.rth!==undefined)
+                               .map(e=>[e.iter,e.rth]);
+    if(newRth.length>0)RTH_PTS=newRth;
+
+    // Rebuild LOG_PANEL
+    LOG_PANEL.length=0;
+    for(const e of s.rth_history){
+      const isBest=e.iter>0&&e.status==='keep';
+      const isCrash=e.status==='crash';
+      const head=e.iter===0?'ITER #0 — BASELINE':
+                 isBest?`ITER #${e.iter}  ★ NEW BEST`:
+                 isCrash?`ITER #${e.iter}  ⚠ CRASH`:
+                 `ITER #${e.iter}`;
+      const sub=e.rth!==null?`R_th = ${e.rth.toExponential(2)} m²K/W`:'SIMULATION CRASH';
+      LOG_PANEL.push({it:e.iter,head,sub,desc:e.desc||''});
+    }
+
+    // Rebuild P_BEST / P_CRASH
+    P_BEST=new Set(); P_CRASH=new Set();
+    for(const e of s.rth_history){
+      if(e.iter>0&&e.status==='keep')P_BEST.add(e.iter);
+      if(e.status==='crash')P_CRASH.add(e.iter);
+    }
+
+    // Update slider range and MAX_ITER
+    MAX_ITER=Math.max(0,(s.total_iters||50)-1);
+    if(s.best_iter!=null)BEST_ITER=s.best_iter;
+    const sl=document.getElementById('sl');
+    if(sl)sl.max=MAX_ITER;
+
+    // Update AI OPTIMAL button label
+    const bOpt=document.getElementById('bOpt');
+    if(bOpt&&s.best_iter!=null)bOpt.textContent=`AI OPTIMAL (iter ${BEST_ITER})`;
+
+    // Live badge
+    const badge=document.getElementById('live-badge');
+    if(badge)badge.style.display=s.from_cluster?'inline-block':'none';
+
+    // Auto-jump to current cluster iter when not animating
+    if(!animId){
+      const tgt=Math.max(0,Math.min(s.current_iter,MAX_ITER));
+      setIter(tgt);
+    }
+  }catch(e){}
+}
+
+// ── Public controls ──────────────────────────────────────────────────────────
+let curIter=0;
+function setIter(it) {
+  curIter=it; tgtOrder=getOrder(it); updateHUD(it);
+  updatePanels(it);
+  const sl=document.getElementById('sl');
+  if(sl&&+sl.value!==it)sl.value=it;
+  const lbl=document.getElementById('ilbl');
+  if(lbl)lbl.textContent=`iter ${it}/${MAX_ITER}`;
+}
+setIter(0);
+
+// Animate
+let animId=null;
+function toggleAnim() {
+  const btn=document.getElementById('bAnim');
+  if(animId){clearInterval(animId);animId=null;btn.textContent='▶ RUN AUTORESEARCH';return;}
+  btn.textContent='⏸ PAUSE AUTORESEARCH';
+  setIter(0);
+  animId=setInterval(()=>{
+    if(curIter>=MAX_ITER){clearInterval(animId);animId=null;btn.textContent='▶ RUN AUTORESEARCH';return;}
+    setIter(curIter+1);
+  },280);
+}
+window.toggleAnim=toggleAnim;
+window.goTo=(it)=>setIter(it);
+window.onSl=(v)=>setIter(+v);
+
+// Start live polling immediately and every 5 s
+fetchState();
+setInterval(fetchState,5000);
+
+// Resize
+window.addEventListener('resize',()=>{
+  const w=innerWidth,h=innerHeight;
+  camera.aspect=w/h; camera.updateProjectionMatrix();
+  renderer.setSize(w,h);
+  bloomComposer.setSize(w,h); finalComposer.setSize(w,h);
+  bloomPass.resolution.set(w,h);
+});
+</script>
+</body>
+</html>
