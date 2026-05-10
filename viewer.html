@@ -775,14 +775,9 @@ async function fetchState(){
       if(e.status==='crash')P_CRASH.add(e.iter);
     }
 
-    // ── Apply real GROMACS nanotube geometry ──────────────────────────────────
-    if(s.nanotube_geometry_best && s.nanotube_geometry_best.length>=4){
-      applyGeomToHeatData(s.nanotube_geometry_best);
-    }
-    if(s.nanotube_geometry_baseline && s.nanotube_geometry_baseline.length>=4){
-      applyGeomToPaths(s.nanotube_geometry_baseline, BASE_PATHS);
-      heatData.forEach((hd,i)=>{ hd.baseCtrl=BASE_PATHS[i]; });
-    }
+    // ── Apply real GROMACS nanotube geometry to solid metallic tubes (tubeData) ──
+    // Heat paths (heatData) are an artistic chaotic→aligned visualisation and always
+    // use the hand-crafted BASE_PATHS / OPT_PATHS — never raw GROMACS geometry.
 
     // Update slider range and MAX_ITER
     MAX_ITER=Math.max(0,(s.total_iters||100)-1);
