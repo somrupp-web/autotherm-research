@@ -220,9 +220,9 @@ function heatMat(col) {
   const c = new THREE.Color(col);
   return new THREE.MeshStandardMaterial({
     color:c.clone().multiplyScalar(0.4),
-    emissive:c, emissiveIntensity:2.8,
+    emissive:c, emissiveIntensity:1.2,
     roughness:0.35, metalness:0.0,
-    transparent:true, opacity:0.82,
+    transparent:true, opacity:0.72,
   });
 }
 
@@ -424,8 +424,8 @@ bloomComposer.renderToScreen = false;
 bloomComposer.addPass(new RenderPass(scene, camera));
 const bloomPass = new UnrealBloomPass(
   new THREE.Vector2(innerWidth, innerHeight),
-  1.6,   // strength
-  0.6,   // radius
+  0.45,  // strength — kept low; ramps up in updateScene with order
+  0.4,   // radius — tighter spread to avoid wall bleed
   0.0    // threshold — fire emissive always exceeds this
 );
 bloomComposer.addPass(bloomPass);
@@ -499,8 +499,8 @@ function updateScene(order) {
     const geo=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(iPts),60,0.055,8,false);
     mesh.geometry.dispose();
     mesh.geometry=geo;
-    mat.emissiveIntensity=2.8+order*2.5;
-    mat.opacity=0.78+order*0.17;
+    mat.emissiveIntensity=1.2+order*5.1;  // baseline: 1.2 (visible, dim); opt(0.55): ~4.0
+    mat.opacity=0.72+order*0.42;  // baseline: 0.72; opt(0.55): ~0.95
   });
 
   // ── Cube edge colour: dim blue → bright cyan ──
@@ -510,7 +510,7 @@ function updateScene(order) {
   // ── Lighting ──
   innerLight.intensity=order*2.5;
   innerLight.color.lerpColors(new THREE.Color(0xFF5500),new THREE.Color(0x00BBFF),order);
-  bloomPass.strength=1.6+order*0.8;  // more glow on aligned paths when optimised
+  bloomPass.strength=0.45+order*2.8;  // baseline: subtle; opt(0.55): ~2.0
 }
 
 // ── HUD update ────────────────────────────────────────────────────────────────
