@@ -534,7 +534,7 @@ def wrap(txt, w):
     return lines[:3]
 
 # ── LEFT PANEL ──────────────────────────────────────────────────────────────────
-def draw_left(ax, iteration, r_th):
+def draw_left(ax, iteration, r_th, max_iter=99):
     X0,Y0,W,H = 0.20, 0.20, 5.55, 12.60
 
     ax.add_patch(FancyBboxPatch((X0,Y0),W,H,
@@ -602,7 +602,7 @@ def draw_left(ax, iteration, r_th):
 
     r_min,r_max = 4e-6, 2.4e-5
     def sr(r): return cy0+ch*(1-(r-r_min)/(r_max-r_min))
-    def si(i): return X0+0.32+(cw-0.24)*(i/49)
+    def si(i): return X0+0.32+(cw-0.24)*(i/max_iter)
 
     for gf in [0.25,.50,.75,1.0]:
         gy = cy0+gf*ch
@@ -681,6 +681,8 @@ def draw_right(ax, iteration, r_th):
 
 # ── Full frame ──────────────────────────────────────────────────────────────────
 def make_frame(iteration):
+    state    = get_state()
+    max_iter = max(1, state.get('total_iters', 100) - 1)
     r_th, order = get_params(iteration)
     improvement = max(0, (BASELINE_R-r_th)/BASELINE_R*100)
     is_best  = iteration in BEST
@@ -721,7 +723,7 @@ def make_frame(iteration):
             ha='right',va='top',fontfamily='monospace')
 
     # Panels
-    draw_left(ax, iteration, r_th)
+    draw_left(ax, iteration, r_th, max_iter=max_iter)
     draw_right(ax, iteration, r_th)
 
     # ── Center: MOLECULAR VIEWER ───────────────────────────────────────────────
@@ -752,7 +754,7 @@ def make_frame(iteration):
         desc = (f'R_th = {r_th:.3e} m²K/W   |   '
                 f'{improvement:.1f}% improvement — aligned CNT layers, ordered heat pathways  ★')
     else:
-        lbl  = f'ITERATION  #{iteration}  /  49'
+        lbl  = f'ITERATION  #{iteration}  /  {max_iter}'
         desc = (f'R_th = {r_th:.3e} m²K/W   |   '
                 f'{improvement:.1f}% improvement vs baseline')
 
@@ -764,7 +766,7 @@ def make_frame(iteration):
     # Progress bar
     ax.add_patch(FancyBboxPatch((6.20,0.12),11.60,0.14,
                  boxstyle='round,pad=0.02',facecolor=DIM,alpha=0.30,zorder=2))
-    pw = 11.60*(iteration/49)
+    pw = 11.60*(iteration/max_iter)
     ax.add_patch(FancyBboxPatch((6.20,0.12),max(0.05,pw),0.14,
                  boxstyle='round,pad=0.02',
                  facecolor=GREEN if is_best else CYAN,alpha=0.60,zorder=3))
@@ -778,12 +780,13 @@ def make_frame(iteration):
 _cache: dict = {}
 
 def get_frame(it):
-    if it not in _cache:
-        _cache[it] = make_frame(it)
+    _cache.clear()  # always regenerate so max_iter from live state is current
+    _cache[it] = make_frame(it)
     return _cache[it]
 
 def animate(pause_s):
-    for it in range(50):
+    total = get_state().get('total_iters', 100)
+    for it in range(total):
         r,_ = get_params(it)
         imp = max(0,(BASELINE_R-r)/BASELINE_R*100)
         badge = ' ★ NEW BEST' if it in BEST else (' ⚠ CRASH' if it in CRASH else '')
@@ -792,7 +795,7 @@ def animate(pause_s):
               f" &nbsp;|&nbsp; R_th = <b style='color:#00D8FF'>{r:.3e}</b> m²K/W"
               f" &nbsp;|&nbsp; <b style='color:#00FF88'>{imp:.1f}%</b> improvement</span>")
         yield get_frame(it), st
-        if it < 49: time.sleep(pause_s)
+        if it < total-1: time.sleep(pause_s)
 
 def jump_to(it):
     r,_ = get_params(it)
@@ -889,11 +892,11 @@ with gr.Blocks(title="AutoTherm TIM Optimizer") as demo:
             img_out = gr.Image(label="", show_label=False, height=None, elem_id="img_out")
             status  = gr.HTML(
                 "<span style='font-family:monospace;color:#2A4060'>"
-                "Press ▶ Start to animate all 50 iterations, or drag the slider to jump</span>")
+                "Press ▶ Start to animate all 100 iterations, or drag the slider to jump</span>")
             with gr.Row(elem_id="ctrl"):
-                start_btn = gr.Button("▶  Start Animation  (50 iterations)", variant="primary", scale=3)
+                start_btn = gr.Button("▶  Start Animation  (100 iterations)", variant="primary", scale=3)
                 pause_sl  = gr.Slider(1,10,value=5,step=0.5,label="Pause per frame (s)",scale=2)
-                iter_sl   = gr.Slider(0,49,value=0,step=1,label="Jump to iteration",scale=3)
+                iter_sl   = gr.Slider(0,99,value=0,step=1,label="Jump to iteration",scale=3)
                 jump_btn  = gr.Button("Go", elem_classes=["secondary"], scale=1)
 
             start_btn.click(animate,  inputs=[pause_sl], outputs=[img_out,status])
