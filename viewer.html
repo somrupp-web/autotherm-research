@@ -782,7 +782,7 @@ async function fetchState(){
     }
 
     // Update slider range and MAX_ITER
-    MAX_ITER=Math.max(0,(s.total_iters||50)-1);
+    MAX_ITER=Math.max(0,(s.total_iters||100)-1);
     if(s.best_iter!=null)BEST_ITER=s.best_iter;
     const sl=document.getElementById('sl');
     if(sl)sl.max=MAX_ITER;

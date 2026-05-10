@@ -102,9 +102,9 @@ def _build_state():
 
     return {
         "from_cluster":          live,
-        "running":               live and n < 50,
+        "running":               live and n < 100,
         "current_iter":          n,
-        "total_iters":           max(50, n + 1),
+        "total_iters":           max(100, n + 1),
         "best_iter":             best_iter,
         "baseline_rth":          BASELINE_RTH,
         "best_rth":              running_best,
