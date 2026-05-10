@@ -425,7 +425,7 @@ bloomComposer.addPass(new RenderPass(scene, camera));
 const bloomPass = new UnrealBloomPass(
   new THREE.Vector2(innerWidth, innerHeight),
   0.45,  // strength — kept low; ramps up in updateScene with order
-  0.4,   // radius — tighter spread to avoid wall bleed
+  0.15,  // radius — tight per-tube halos; prevents 24-tube bloom from merging
   0.0    // threshold — fire emissive always exceeds this
 );
 bloomComposer.addPass(bloomPass);
@@ -500,8 +500,8 @@ function updateScene(order) {
     const geo=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(iPts),60,0.055,8,false);
     mesh.geometry.dispose();
     mesh.geometry=geo;
-    mat.emissiveIntensity=1.2+o2*4.5;  // order=0:1.2  order=0.12:1.27  order=0.55:2.56
-    mat.opacity=0.72+o2*0.45;          // order=0:0.72 order=0.55:0.84
+    mat.emissiveIntensity=1.2+o2*2.3;  // order=0:1.2  order=0.55:~1.9  (never overwhelms)
+    mat.opacity=0.72+o2*0.45;          // order=0:0.72 order=0.55:0.86
   });
 
   // ── Cube edge colour: dim blue → bright cyan ──
@@ -511,7 +511,7 @@ function updateScene(order) {
   // ── Lighting ──
   innerLight.intensity=order*2.5;
   innerLight.color.lerpColors(new THREE.Color(0xFF5500),new THREE.Color(0x00BBFF),order);
-  bloomPass.strength=0.45+o2*2.5;  // order=0:0.45  order=0.12:0.49  order=0.55:1.21
+  bloomPass.strength=0.45+o2*0.75;  // order=0:0.45  order=0.55:~0.68  (tight halos, no wash)
 }
 
 // ── HUD update ────────────────────────────────────────────────────────────────
@@ -746,9 +746,9 @@ async function fetchState(){
         newKey.push([e.iter,runBest,ord]);
       }
     }
-    // Always update from live cluster data (even if no keeps → flat at baseline).
-    // Only keep the Qwen3.5 demo fallback when there is no live connection at all.
-    if(newKey.length>1||s.from_cluster)KEY=newKey;
+    // Always update KEY when server returned data (rth_history empty → returned early above).
+    // Fallback Qwen3.5 KEY is only used before the very first successful fetch.
+    KEY=newKey;
 
     // Rebuild RTH_PTS (only entries with valid rth)
     const newRth=s.rth_history.filter(e=>e.rth!==null&&e.rth!==undefined)
