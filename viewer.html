@@ -795,12 +795,21 @@ async function fetchState(){
     const badge=document.getElementById('live-badge');
     if(badge)badge.style.display=s.from_cluster?'inline-block':'none';
 
-    // Never auto-jump; page always starts at baseline (iter 0).
-    // Slider max and KEY are updated silently so RUN AUTORESEARCH reflects live data.
+    // Auto-follow current cluster iter when loop is running.
+    // Skip the very first poll (page opens at baseline) and respect manual scrubbing
+    // (pauses auto-follow for 15 s after the user touches the slider or buttons).
+    const _manualPause=Date.now()-_lastManual<15000;
+    if(!_initialLoad && s.running && !animId && !_manualPause){
+      const tgt=Math.max(0,Math.min(s.current_iter,MAX_ITER));
+      setIter(tgt);
+    }
+    _initialLoad=false;
   }catch(e){}
 }
 
 // ── Public controls ──────────────────────────────────────────────────────────
+let _initialLoad=true;   // skip auto-jump on first poll so page opens at baseline
+let _lastManual=0;       // timestamp of last manual slider/button interaction
 let curIter=0;
 function setIter(it) {
   curIter=it; tgtOrder=getOrder(it); updateHUD(it);
@@ -825,8 +834,8 @@ function toggleAnim() {
   },280);
 }
 window.toggleAnim=toggleAnim;
-window.goTo=(it)=>setIter(it);
-window.onSl=(v)=>setIter(+v);
+window.goTo=(it)=>{_lastManual=Date.now();setIter(it);};
+window.onSl=(v)=>{_lastManual=Date.now();setIter(+v);};
 
 // Start live polling immediately and every 5 s
 fetchState();
