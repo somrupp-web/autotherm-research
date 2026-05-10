@@ -471,6 +471,7 @@ function getOrder(it) {
 // ── Update scene state ─────────────────────────────────────────────────────────
 const Q0 = new THREE.Quaternion();
 function updateScene(order) {
+  const o2=order*order;  // quadratic factor: near-baseline for low orders, ramps near optimised
   // ── Tubes: slerp position/orientation between baseline ↔ optimised ──
   tubeData.forEach(({mesh,mat},i)=>{
     const b=BT[i], o=OT[i];
@@ -499,7 +500,6 @@ function updateScene(order) {
     const geo=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(iPts),60,0.055,8,false);
     mesh.geometry.dispose();
     mesh.geometry=geo;
-    const o2=order*order;  // quadratic: stays near baseline at low order, ramps near optimised
     mat.emissiveIntensity=1.2+o2*4.5;  // order=0:1.2  order=0.12:1.27  order=0.55:2.56
     mat.opacity=0.72+o2*0.45;          // order=0:0.72 order=0.55:0.84
   });
