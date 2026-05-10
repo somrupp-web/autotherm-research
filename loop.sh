@@ -12,8 +12,8 @@
 REPO_DIR="/home/nvidia/autotherm"
 export PATH="/home/nvidia/.bun/bin:$PATH"
 OPENCODE=$(find /home/nvidia/.local/bin /home/nvidia/.local/share/fnm /home/nvidia/.bun/install/global/node_modules/opencode-ai/bin -name opencode -type f 2>/dev/null | head -1)
-MODEL="vllm//home/nvidia/models/Qwen3.5-122B-A10B-AWQ"
-MAX_ITER="${1:-50}"
+MODEL="vllm//home/nvidia/models/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"
+MAX_ITER="${1:-100}"
 NODE_ID="${NODE_ID:-0}"
 CLUSTER_SIZE="${CLUSTER_SIZE:-1}"
 BRANCH="node-${NODE_ID}"
