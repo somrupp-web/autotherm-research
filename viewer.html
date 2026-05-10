@@ -447,10 +447,10 @@ finalComposer.addPass(mixPass);
 finalComposer.addPass(new OutputPass());
 
 // ── State data ────────────────────────────────────────────────────────────────
-let KEY = [[0,2.28e-5,0.0],[1,7.42e-6,0.12],[30,5.49e-6,0.38],[49,4.55e-6,0.55]];
+let KEY = [[0,2.28e-5,0.0],[24,7.42e-6,0.12],[53,5.49e-6,0.38],[99,4.55e-6,0.55]];
 const BR = 2.28e-5;
-let MAX_ITER = 49;
-let BEST_ITER = 49;
+let MAX_ITER = 99;
+let BEST_ITER = 0;
 
 function getRth(it) {
   for(let i=0;i<KEY.length-1;i++){
@@ -784,6 +784,7 @@ async function fetchState(){
     if(s.best_iter!=null)BEST_ITER=s.best_iter;
     const sl=document.getElementById('sl');
     if(sl)sl.max=MAX_ITER;
+    updateHUD(curIter);  // refresh iter X/MAX_ITER display with updated MAX_ITER
 
     // Update AI OPTIMAL button label
     const bOpt=document.getElementById('bOpt');
