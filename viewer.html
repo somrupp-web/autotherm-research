@@ -590,7 +590,8 @@ let LOG_PANEL=[
 let P_BEST=new Set([1,30,49]); let P_CRASH=new Set([8]);
 let RTH_PTS=[[0,2.28e-5],[1,7.42e-6],[8,2.10e-5],[15,8.91e-6],[22,6.83e-6],[30,5.49e-6],[38,5.71e-6],[44,5.12e-6],[49,4.55e-6]];
 
-let GPU_REAL=[];  // real GPU utilization % readings from compute nodes, newest last
+let GPU_REAL=[];    // live rolling readings from compute nodes, newest last
+let GPU_FROZEN=null; // peak-activity snapshot shown once loop finishes
 
 function drawSparkline(canvas,data,col){
   const ctx=canvas.getContext('2d'),W=canvas.width,H=canvas.height;
@@ -746,7 +747,7 @@ function updatePanels(iter){
   const rc=document.getElementById('rth-chart');
   if(rc) drawRthChart(rc,iter);
   const gc=document.getElementById('gpu-chart');
-  if(gc) drawSparkline(gc,GPU_REAL,'#00FF88');
+  if(gc) drawSparkline(gc,GPU_FROZEN||GPU_REAL,'#00FF88');
 }
 
 // ── Live state polling ────────────────────────────────────────────────────────
@@ -829,7 +830,20 @@ async function fetchState(){
     if(badge)badge.style.display=s.from_cluster?'inline-block':'none';
 
     // Real GPU telemetry
-    if(Array.isArray(s.gpu_telemetry)&&s.gpu_telemetry.length>0) GPU_REAL=s.gpu_telemetry;
+    if(Array.isArray(s.gpu_telemetry)&&s.gpu_telemetry.length>0){
+      GPU_REAL=s.gpu_telemetry;
+      // When loop finishes, freeze the most active window so chart stays interesting
+      if(!s.running && GPU_FROZEN===null && GPU_REAL.length>20
+         && Math.max(...GPU_REAL)>50){
+        const W=Math.min(90,GPU_REAL.length); // up to 15-min window
+        let bestAvg=0,bestStart=0;
+        for(let i=0;i<=GPU_REAL.length-W;i++){
+          const avg=GPU_REAL.slice(i,i+W).reduce((a,b)=>a+b,0)/W;
+          if(avg>bestAvg){bestAvg=avg;bestStart=i;}
+        }
+        GPU_FROZEN=GPU_REAL.slice(bestStart,bestStart+W);
+      }
+    }
 
     // Auto-follow current cluster iter when loop is running.
     // Skip the very first poll (page opens at baseline) and respect manual scrubbing
