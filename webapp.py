@@ -177,56 +177,75 @@ def proj(pts):
     x, y, z = pts[:, 0], pts[:, 1], pts[:, 2]
     return np.column_stack([(x-y)*COS30, (x+y)*SIN30 + z*0.90])
 
-# ── Simulation data ────────────────────────────────────────────────────────────
-KEY = [(0, 2.28e-5, 0.0), (1, 7.42e-6, 0.12),
-       (30, 5.49e-6, 0.65), (49, 4.55e-6, 1.0)]
-BASELINE_R = 2.28e-5
-BEST  = {1, 30, 49}
-CRASH = {8}
-SAMP  = {0:2.28e-5, 1:7.42e-6, 8:2.10e-5, 15:8.91e-6,
-         22:6.83e-6, 30:5.49e-6, 38:5.71e-6, 44:5.12e-6, 49:4.55e-6}
+# ── Live simulation data (derived from cluster state) ─────────────────────────
+BASELINE_R = BASELINE_RTH  # alias used throughout drawing code
 
-LOG_ENTRIES = [
-    (0,  "ITER #0 — BASELINE",
-         "metal=60%, filler=25%, binder=15%  ε_mf=3.50",
-         "Disordered CNT network. High phonon scattering at random interfaces."),
-    (1,  "ITER #1  ★ NEW BEST",
-         "ε_mf → 6.0   filler → 30%",
-         "Strengthening cross-interactions. Percolation network begins forming."),
-    (8,  "ITER #8  ⚠ CRASH",
-         "T=300 K experiment",
-         "grompp(eq) failed — topology diverged. Reverting temperature to 350 K."),
-    (15, "ITER #15",
-         "σ(metal-filler)=0.310   ε_mf → 6.5",
-         "Atomic size matching improved. Recovery from crash confirmed."),
-    (22, "ITER #22",
-         "ε_mf=7.0  ε_mb=5.5  ε_fb=4.0",
-         "Maximum cross-coupling test. Regime nearing saturation."),
-    (30, "ITER #30  ★ NEW BEST",
-         "metal=53%  filler=32%  binder=15%",
-         "Hexagonal percolation network confirmed. 26% improvement on previous best."),
-    (38, "ITER #38",
-         "SIM_TIME → 200 ps  (same composition)",
-         "Extended simulation for better phonon statistics. Minor regression in noise."),
-    (44, "ITER #44",
-         "ε_mf=7.0  ε_mb=6.0  ε_fb=5.0",
-         "Maximum cross-coupling confirmed. Structure converging toward optimum."),
-    (49, "ITER #49  ★ OPTIMAL",
-         "metal=53%  filler=32%  ε_mf=7.0  ε_mb=6.0",
-         "Self-assembled hexagonal CNT layers. 5× improvement over baseline."),
-]
+def _live_data():
+    """Derive samp/best_set/crash_set/log_entries from cached cluster state."""
+    state = get_state()
+    hist  = state.get('rth_history', [])
+
+    samp            = {}
+    best_set        = set()
+    crash_set       = set()
+    log_entries     = []
+    running_best_at = {}
+    running_best    = BASELINE_RTH
+
+    for entry in hist:
+        it     = entry['iter']
+        rth    = entry.get('rth')
+        status = entry.get('status', '')
+        desc   = entry.get('desc', '').strip()
+
+        if rth is not None:
+            samp[it] = rth
+
+        if status == 'keep' and rth is not None and rth < running_best:
+            running_best = rth
+            best_set.add(it)
+
+        running_best_at[it] = running_best
+
+        if status in ('crash', 'error', 'fail'):
+            crash_set.add(it)
+
+        if it == 0:
+            head = 'ITER #0 — BASELINE'
+        elif it in best_set:
+            head = f'ITER #{it}  ★ NEW BEST'
+        elif it in crash_set:
+            head = f'ITER #{it}  ⚠ CRASH'
+        else:
+            head = f'ITER #{it}'
+
+        sub1 = desc[:80] if desc else '—'
+        log_entries.append((it, head, sub1, ''))
+
+    return {
+        'samp':            samp,
+        'best_set':        best_set,
+        'crash_set':       crash_set,
+        'log_entries':     log_entries,
+        'running_best_at': running_best_at,
+    }
+
 
 def get_params(it):
-    for i in range(len(KEY)-1):
-        i0,r0,o0 = KEY[i]; i1,r1,o1 = KEY[i+1]
-        if i0 <= it <= i1:
-            t = (it-i0)/(i1-i0) if i1>i0 else 0.0
-            t = t*t*(3-2*t)
-            return r0+t*(r1-r0), o0+t*(o1-o0)
-    return KEY[-1][1], KEY[-1][2]
+    """Return (r_th, alignment_order) at iteration it from live data."""
+    data = _live_data()
+    rba  = data['running_best_at']
+    if not rba:
+        return BASELINE_RTH, 0.0
+    valid = [k for k in rba if k <= it]
+    r_th  = rba[max(valid)] if valid else BASELINE_RTH
+    order = max(0.0, min(1.0, (BASELINE_RTH - r_th) / BASELINE_RTH))
+    return r_th, order
+
 
 def visible_log(iteration):
-    return [e for e in LOG_ENTRIES if e[0] <= iteration][-5:]
+    entries = _live_data()['log_entries']
+    return [e for e in entries if e[0] <= iteration][-5:]
 
 # ── Glass cube ──────────────────────────────────────────────────────────────────
 CORNERS = (np.array([[0,0,0],[1,0,0],[1,1,0],[0,1,0],
@@ -555,11 +574,12 @@ def draw_left(ax, iteration, r_th, max_iter=99):
     card_gap  = 0.10
     card_y0   = Y0+H-0.62
 
+    ld = _live_data()
     for k, (it, head, sub1, sub2) in enumerate(reversed(entries[-5:])):
         ey  = card_y0 - k*(card_h+card_gap)
         cur = (it == entries[-1][0])
-        best= it in BEST
-        crash= it in CRASH
+        best  = it in ld['best_set']
+        crash = it in ld['crash_set']
 
         if best:   card_col, head_col = '#003018', GREEN
         elif crash: card_col, head_col = '#1A0808', RED
@@ -611,16 +631,16 @@ def draw_left(ax, iteration, r_th, max_iter=99):
         ax.text(X0+0.22,gy,f'{rv:.0e}',color=MUTED,fontsize=6.5,
                 ha='right',va='center',fontfamily='monospace')
 
-    vis = sorted((i,r) for i,r in SAMP.items() if i<=iteration)
+    vis = sorted((i,r) for i,r in ld['samp'].items() if i<=iteration)
     if len(vis)>1:
         xs=[si(i) for i,r in vis]; ys=[sr(r) for i,r in vis]
         ax.plot(xs,ys,color=CYAN,lw=1.4,alpha=0.55,zorder=4)
         ax.fill_between(xs,[cy0]*len(xs),ys,color=CYAN,alpha=0.12,zorder=3)
 
     for i,r in vis:
-        col = GREEN if i in BEST else (RED if i in CRASH else MUTED)
+        col = GREEN if i in ld['best_set'] else (RED if i in ld['crash_set'] else MUTED)
         ax.add_patch(Circle((si(i),sr(r)),0.060,color=col,zorder=5))
-        if i in BEST:
+        if i in ld['best_set']:
             ax.text(si(i),sr(r)+0.20,f'{r:.1e}',color=GREEN,fontsize=6.0,
                     ha='center',fontfamily='monospace',zorder=6)
 
@@ -685,8 +705,9 @@ def make_frame(iteration):
     max_iter = max(1, state.get('total_iters', 100) - 1)
     r_th, order = get_params(iteration)
     improvement = max(0, (BASELINE_R-r_th)/BASELINE_R*100)
-    is_best  = iteration in BEST
-    is_crash = iteration in CRASH
+    ld = _live_data()
+    is_best  = iteration in ld['best_set']
+    is_crash = iteration in ld['crash_set']
 
     fig = plt.figure(figsize=(24,13.5), facecolor=BG, dpi=100)
     ax  = fig.add_axes([0,0,1,1], facecolor=BG)
@@ -789,7 +810,8 @@ def animate(pause_s):
     for it in range(total):
         r,_ = get_params(it)
         imp = max(0,(BASELINE_R-r)/BASELINE_R*100)
-        badge = ' ★ NEW BEST' if it in BEST else (' ⚠ CRASH' if it in CRASH else '')
+        ld    = _live_data()
+        badge = ' ★ NEW BEST' if it in ld['best_set'] else (' ⚠ CRASH' if it in ld['crash_set'] else '')
         st = (f"<span style='font-family:monospace;font-size:15px;color:#D8EEFF'>"
               f"<b>{'Baseline' if it==0 else f'Iteration {it}'}</b>{badge}"
               f" &nbsp;|&nbsp; R_th = <b style='color:#00D8FF'>{r:.3e}</b> m²K/W"
@@ -902,6 +924,12 @@ with gr.Blocks(title="AutoTherm TIM Optimizer") as demo:
             start_btn.click(animate,  inputs=[pause_sl], outputs=[img_out,status])
             jump_btn.click( jump_to,  inputs=[iter_sl],  outputs=[img_out,status])
             iter_sl.release(jump_to,  inputs=[iter_sl],  outputs=[img_out,status])
+
+    def _init_slider():
+        max_it = max(1, get_state().get('total_iters', 100) - 1)
+        return gr.update(maximum=max_it)
+
+    demo.load(_init_slider, outputs=[iter_sl])
 
 if __name__ == "__main__":
     print("3D viewer  -> http://localhost:7863/viewer.html")

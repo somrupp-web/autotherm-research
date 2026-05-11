@@ -93,8 +93,8 @@ body{background:#04090F;font-family:'Courier New',monospace;}
 
 <div id="ctrl">
   <button class="btn on" id="bBase" onclick="goTo(0)">BASELINE</button>
-  <input type="range" id="sl" min="0" max="49" value="0" oninput="onSl(+this.value)">
-  <span id="ilbl">iter 0/49</span>
+  <input type="range" id="sl" min="0" max="99" value="0" oninput="onSl(+this.value)">
+  <span id="ilbl">iter 0/99</span>
   <button class="btn" id="bOpt" onclick="goTo(BEST_ITER)">AI OPTIMAL</button>
   <button class="btn" id="bAnim" onclick="toggleAnim()">▶ RUN AUTORESEARCH</button>
   <span id="live-badge" style="display:none;background:#00FF88;color:#020C04;font-family:'Courier New',monospace;font-size:11px;font-weight:bold;padding:3px 9px;border-radius:4px;letter-spacing:.6px;">● LIVE</span>
@@ -102,7 +102,7 @@ body{background:#04090F;font-family:'Courier New',monospace;}
 
 <!-- ── LEFT PANEL ─────────────────────────────────────────────────────────── -->
 <div id="left-panel">
-  <div class="ptitle">LLM (QWEN3.5‑122B) REASONING LOG</div>
+  <div class="ptitle">LLM (NEMOTRON‑SUPER‑120B) REASONING LOG</div>
   <hr class="pdiv">
   <div class="log-area" id="panel-log"></div>
   <div style="flex:1 1 auto;min-height:8px;"></div>
@@ -346,9 +346,24 @@ const OLZ = [-2.10,-1.26,-0.42,0.42,1.26,2.10];
   });
 })();
 
+// Perfect alignment: dead-straight horizontal lines on an exact grid.
+// Only reached when improvement >= 60% (order driven to 1.0).
+const PERF_PATHS = [];
+(()=>{
+  OLZ.forEach(lz=>{
+    [-1.65,-0.55,0.55,1.65].forEach(ty=>{
+      PERF_PATHS.push([
+        new THREE.Vector3(-2.9, ty, lz),
+        new THREE.Vector3( 2.9, ty, lz),
+      ]);
+    });
+  });
+})();
+
 const NP = Math.max(BASE_PATHS.length, OPT_PATHS.length);
 while(BASE_PATHS.length<NP) BASE_PATHS.push(BASE_PATHS[0]);
 while(OPT_PATHS.length<NP)  OPT_PATHS.push(OPT_PATHS[0]);
+while(PERF_PATHS.length<NP) PERF_PATHS.push(PERF_PATHS[PERF_PATHS.length-1]);
 
 // ── Convert GROMACS cluster geometry to Three.js path control points ──────────
 // tube: {center:[-0.5..0.5]^3, direction:[dx,dy,dz], length:[0..1], radius}
@@ -415,7 +430,7 @@ const heatData = BASE_PATHS.map((bp,i)=>{
   const mesh= new THREE.Mesh(geo, mat);
   bloomMeshes.add(mesh);              // register for bloom-only pass
   heatGroup.add(mesh);
-  return {mesh, mat, baseCtrl:bp, optCtrl:OPT_PATHS[i]};
+  return {mesh, mat, baseCtrl:bp, optCtrl:OPT_PATHS[i], perfCtrl:PERF_PATHS[i]};
 });
 
 // Bloom-only composer — renders offscreen (no custom RT; use internal ping-pong)
@@ -447,10 +462,11 @@ finalComposer.addPass(mixPass);
 finalComposer.addPass(new OutputPass());
 
 // ── State data ────────────────────────────────────────────────────────────────
-let KEY = [[0,2.28e-5,0.0],[24,7.42e-6,0.12],[53,5.49e-6,0.38],[99,4.55e-6,0.55]];
+let KEY = [[0,2.28e-5,0.0],[1,7.42e-6,0.12],[30,5.49e-6,0.38],[49,4.55e-6,0.55]];
 const BR = 2.28e-5;
 let MAX_ITER = 99;
 let BEST_ITER = 0;
+let LIVE_ITER = 0;  // last iteration with actual completed data from cluster
 
 function getRth(it) {
   for(let i=0;i<KEY.length-1;i++){
@@ -491,17 +507,24 @@ function updateScene(order) {
     // Colour is fixed at init (thermal gradient) — only geometry changes with order.
   });
 
-  // ── Heat paths: morph chaotic → aligned ──
-  heatData.forEach(({mesh,mat,baseCtrl,optCtrl},i)=>{
-    const f=i/(NP-1);
+  // ── Heat paths: morph chaotic → aligned → perfectly horizontal ──
+  heatData.forEach(({mesh,mat,baseCtrl,optCtrl,perfCtrl},i)=>{
     const bPts=resample(baseCtrl,18);
     const oPts=resample(optCtrl,18);
-    const iPts=bPts.map((bp,k)=>new THREE.Vector3().lerpVectors(bp,oPts[k],order));
+    const pPts=resample(perfCtrl,18);
+    let iPts;
+    if(order<=0.55){
+      const t=order/0.55;
+      iPts=bPts.map((bp,k)=>new THREE.Vector3().lerpVectors(bp,oPts[k],t));
+    } else {
+      const t=(order-0.55)/0.45;
+      iPts=oPts.map((op,k)=>new THREE.Vector3().lerpVectors(op,pPts[k],t));
+    }
     const geo=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(iPts),60,0.055,8,false);
     mesh.geometry.dispose();
     mesh.geometry=geo;
-    mat.emissiveIntensity=1.2+o2*2.3;  // order=0:1.2  order=0.55:~1.9  (never overwhelms)
-    mat.opacity=0.72+o2*0.45;          // order=0:0.72 order=0.55:0.86
+    mat.emissiveIntensity=1.2+o2*2.3;  // order=0:1.2  order=1.0:~3.5
+    mat.opacity=0.72+o2*0.45;          // order=0:0.72 order=1.0:1.17 (clamped by shader)
   });
 
   // ── Cube edge colour: dim blue → bright cyan ──
@@ -521,7 +544,7 @@ function updateHUD(iter) {
   document.getElementById('rth').textContent=`R_th = ${rth.toExponential(3)} m²K/W`;
   document.getElementById('rth').style.color=rth<6e-6?'#00FF88':rth<1e-5?'#00D8FF':rth<2e-5?'#FF8800':'#FF3A3A';
   document.getElementById('lbl').textContent=
-    iter===0?'BASELINE DESIGN  (HUMAN GUESS)':
+    iter===0?'BASELINE DESIGN  (MANUAL FORMULATION)':
     iter===BEST_ITER?`AI-OPTIMIZED STRUCTURE  (ITERATION #${BEST_ITER})`:
     `ITERATION ${iter}  /  ${MAX_ITER}`;
   document.getElementById('imp').textContent=`▼  ${imp.toFixed(1)}%  improvement vs baseline`;
@@ -539,7 +562,7 @@ function render() {
   requestAnimationFrame(render);
   const dt=clock.getDelta();
   controls.update();
-  curOrder += (tgtOrder-curOrder)*Math.min(1,dt*3.5);
+  curOrder += (tgtOrder-curOrder)*Math.min(1,dt*0.4);
   updateScene(curOrder);
   rimLight.intensity=1.2+Math.sin(clock.getElapsedTime()*0.9)*0.1;
 
@@ -637,7 +660,8 @@ function drawRthChart(canvas,iter){
   ctx.clearRect(0,0,W,H);ctx.fillStyle='#050D18';ctx.fillRect(0,0,W,H);
   const pl=64,pr=12,pt=14,pb=38,cw=W-pl-pr,ch=H-pt-pb;
   const R0=4e-6,R1=2.4e-5;
-  const sx=i=>pl+(i/MAX_ITER)*cw, sy=r=>pt+ch*(1-(r-R0)/(R1-R0));
+  const xMax=LIVE_ITER>0?LIVE_ITER:MAX_ITER;
+  const sx=i=>pl+(i/xMax)*cw, sy=r=>pt+ch*(1-(r-R0)/(R1-R0));
   // grid + y labels
   ctx.font='bold 13px Courier New';
   [0.0,0.25,0.5,0.75,1.0].forEach(f=>{
@@ -653,8 +677,8 @@ function drawRthChart(canvas,iter){
   // axes
   ctx.strokeStyle='#2A5070';ctx.lineWidth=1.5;ctx.setLineDash([]);
   ctx.beginPath();ctx.moveTo(pl,pt);ctx.lineTo(pl,pt+ch);ctx.lineTo(pl+cw,pt+ch);ctx.stroke();
-  // x labels — 6 evenly spaced ticks from 0 to MAX_ITER
-  const xTicks=(()=>{const t=[];const step=Math.ceil(MAX_ITER/5);for(let i=0;i<=MAX_ITER;i+=step)t.push(i);if(t[t.length-1]!==MAX_ITER)t.push(MAX_ITER);return t;})();
+  // x labels — 6 evenly spaced ticks from 0 to xMax (last completed iter)
+  const xTicks=(()=>{const t=[];const step=Math.ceil(xMax/5);for(let i=0;i<=xMax;i+=step)t.push(i);if(t[t.length-1]!==xMax)t.push(xMax);return t;})();
   ctx.font='bold 13px Courier New';ctx.fillStyle='#7AAAC8';ctx.textAlign='center';ctx.textBaseline='top';
   xTicks.filter(i=>i<=iter).forEach(i=>{
     const x=sx(i);
@@ -736,13 +760,15 @@ async function fetchState(){
       if(e.status==='keep'&&e.rth!==null) globalBest=Math.min(globalBest,e.rth);
     }
     const rthRange=Math.max(1e-12,base-globalBest);
+    const globalImpPct=rthRange/base;
+    const maxOrd=globalImpPct>=0.60?1.0:0.55;
     const newKey=[[0,base,0]];
     let runBest=base;
     for(const e of s.rth_history){
       if(e.iter===0)continue;
       if(e.status==='keep'&&e.rth!==null){
         runBest=Math.min(runBest,e.rth);
-        const ord=(base-runBest)/rthRange*0.55;
+        const ord=(base-runBest)/rthRange*maxOrd;
         newKey.push([e.iter,runBest,ord]);
       }
     }
@@ -782,8 +808,10 @@ async function fetchState(){
     // Update slider range and MAX_ITER
     MAX_ITER=Math.max(0,(s.total_iters||100)-1);
     if(s.best_iter!=null)BEST_ITER=s.best_iter;
+    LIVE_ITER=s.current_iter!=null?Math.min(Math.max(0,s.current_iter),MAX_ITER)
+             :RTH_PTS.length>0?RTH_PTS[RTH_PTS.length-1][0]:MAX_ITER;
     const sl=document.getElementById('sl');
-    if(sl)sl.max=MAX_ITER;
+    if(sl)sl.max=LIVE_ITER;
     updateHUD(curIter);  // refresh iter X/MAX_ITER display with updated MAX_ITER
 
     // Update AI OPTIMAL button label
@@ -828,7 +856,7 @@ function toggleAnim() {
   btn.textContent='⏸ PAUSE AUTORESEARCH';
   setIter(0);
   animId=setInterval(()=>{
-    if(curIter>=MAX_ITER){clearInterval(animId);animId=null;btn.textContent='▶ RUN AUTORESEARCH';return;}
+    if(curIter>=LIVE_ITER){clearInterval(animId);animId=null;btn.textContent='▶ RUN AUTORESEARCH';return;}
     setIter(curIter+1);
   },280);
 }
