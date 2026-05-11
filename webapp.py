@@ -31,6 +31,52 @@ BASELINE_RTH  = 2.28e-5
 _state_cache = {"data": None, "ts": 0.0}
 _state_lock  = threading.Lock()
 
+# ── Real-time GPU telemetry from compute nodes ────────────────────────────────
+COMPUTE_NODES_GPU = [
+    ('spark-0c01', '10.137.203.184'),
+    ('spark-1aa0', '10.137.203.174'),
+    ('spark-1b93', '10.137.203.177'),
+]
+_gpu_history     = []   # rolling list of avg GPU util % floats
+_gpu_lock        = threading.Lock()
+GPU_HISTORY_MAX  = 360  # 1 hour at 10 s intervals
+
+def _query_gpu_util(ip):
+    try:
+        c = paramiko.SSHClient()
+        c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        c.connect(ip, username=CLUSTER_USER, password=CLUSTER_PASS, timeout=5)
+        _, out, _ = c.exec_command(
+            'nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null',
+            timeout=8)
+        r = out.read().decode('utf-8', errors='replace').strip()
+        c.close()
+        vals = [int(x.strip()) for x in r.splitlines() if x.strip().isdigit()]
+        return sum(vals) / len(vals) if vals else None
+    except Exception:
+        return None
+
+def _gpu_poll_loop():
+    while True:
+        results, lock2 = [], threading.Lock()
+        def _query(ip):
+            v = _query_gpu_util(ip)
+            if v is not None:
+                with lock2: results.append(v)
+        threads = [threading.Thread(target=_query, args=(ip,), daemon=True)
+                   for _, ip in COMPUTE_NODES_GPU]
+        for t in threads: t.start()
+        for t in threads: t.join(timeout=10)
+        if results:
+            avg = round(sum(results) / len(results), 1)
+            with _gpu_lock:
+                _gpu_history.append(avg)
+                if len(_gpu_history) > GPU_HISTORY_MAX:
+                    del _gpu_history[0]
+        time.sleep(10)
+
+threading.Thread(target=_gpu_poll_loop, daemon=True).start()
+
 def _ssh_read(client, path):
     """Read a remote file via an open paramiko client. Returns '' on missing."""
     _, out, _ = client.exec_command(f"cat {path} 2>/dev/null")
@@ -100,6 +146,9 @@ def _build_state():
         except Exception:
             return None
 
+    with _gpu_lock:
+        gpu_tel = list(_gpu_history)
+
     return {
         "from_cluster":          live,
         "running":               live and n < 100,
@@ -112,6 +161,7 @@ def _build_state():
         "rth_history":           hist,
         "nanotube_geometry_best":     _parse_geom(geom_best_raw),
         "nanotube_geometry_baseline": _parse_geom(geom_base_raw),
+        "gpu_telemetry":         gpu_tel,
     }
 
 def get_state():

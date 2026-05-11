@@ -119,7 +119,6 @@ body{background:#04090F;font-family:'Courier New',monospace;}
   <div style="flex:1 1 auto;min-height:8px;"></div>
   <div class="ptitle">CLUSTER TELEMETRY</div>
   <hr class="pdiv">
-  <div class="tl">NODE 1‑4 BLACKWELL GPU (NCCL ACTIVE)</div>
   <div class="chart-wrap"><canvas id="gpu-chart" width="560" height="130"></canvas></div>
 </div>
 
@@ -591,11 +590,7 @@ let LOG_PANEL=[
 let P_BEST=new Set([1,30,49]); let P_CRASH=new Set([8]);
 let RTH_PTS=[[0,2.28e-5],[1,7.42e-6],[8,2.10e-5],[15,8.91e-6],[22,6.83e-6],[30,5.49e-6],[38,5.71e-6],[44,5.12e-6],[49,4.55e-6]];
 
-// Seeded PRNG
-function mulberry32(s){return()=>{s=(s+0x6D2B79F5)|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
-const _g=mulberry32(99);
-const GPU_D=Array.from({length:20000},(_,i)=>{let v=84+(_g()-0.5)*8;if([350,720,1440,2160,2880,3600,4320,5040,5760,6480,7200,7920].some(s=>i>=s&&i<s+70))v*=0.30;return Math.max(8,Math.min(100,v));});
-function telSlice(it){const o=Math.min(it*110,GPU_D.length-5000);return GPU_D.slice(o,o+5000).filter((_,i)=>i%10===0);}
+let GPU_REAL=[];  // real GPU utilization % readings from compute nodes, newest last
 
 function drawSparkline(canvas,data,col){
   const ctx=canvas.getContext('2d'),W=canvas.width,H=canvas.height;
@@ -624,21 +619,27 @@ function drawSparkline(canvas,data,col){
   // X-axis line
   ctx.beginPath();ctx.moveTo(pl,pt+ch);ctx.lineTo(pl+cw,pt+ch);ctx.stroke();
 
-  // X-axis labels (time steps: 0 … 500 data points representing ~5000 sim steps)
-  const nTicks=5;
-  ctx.fillStyle='#7AAAC8';ctx.textAlign='center';ctx.textBaseline='top';
-  for(let i=0;i<=nTicks;i++){
-    const x=pl+(i/nTicks)*cw;
-    const lbl=(i/nTicks*5000).toFixed(0);
-    ctx.fillText(lbl,x,pt+ch+6);
-    ctx.strokeStyle='#2A5070';ctx.lineWidth=1;
-    ctx.beginPath();ctx.moveTo(x,pt+ch);ctx.lineTo(x,pt+ch+4);ctx.stroke();
-  }
+  // X-axis labels: older → now
+  ctx.fillStyle='#7AAAC8';ctx.font='bold 14px Courier New';
+  ctx.textAlign='left'; ctx.textBaseline='top';
+  ctx.fillText('← older',pl+2,pt+ch+6);
+  ctx.textAlign='right';
+  ctx.fillText('now →',pl+cw-2,pt+ch+6);
+  ctx.strokeStyle='#2A5070';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(pl,pt+ch);ctx.lineTo(pl+cw,pt+ch);ctx.stroke();
 
   // X-axis title
   ctx.fillStyle='#5090B8';ctx.font='12px Courier New';
   ctx.textAlign='center';ctx.textBaseline='bottom';
-  ctx.fillText('Simulation steps',pl+cw/2,H);
+  ctx.fillText('GPU Utilization  (real-time, 10 s intervals)',pl+cw/2,H);
+
+  // No data yet
+  if(!data||data.length<2){
+    ctx.fillStyle='#2A5070';ctx.font='bold 14px Courier New';
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('Polling cluster…',pl+cw/2,pt+ch/2);
+    return;
+  }
 
   // Data — map to plot area
   const xs=data.map((_,i)=>pl+i/(data.length-1)*cw);
@@ -653,6 +654,12 @@ function drawSparkline(canvas,data,col){
   // Line
   ctx.beginPath();xs.forEach((x,i)=>i===0?ctx.moveTo(x,ys[i]):ctx.lineTo(x,ys[i]));
   ctx.strokeStyle=col;ctx.lineWidth=1.6;ctx.stroke();
+
+  // Current value label
+  const last=data[data.length-1];
+  ctx.fillStyle=col;ctx.font='bold 13px Courier New';
+  ctx.textAlign='right';ctx.textBaseline='middle';
+  ctx.fillText(`${last.toFixed(0)}%`,pl+cw-4,ys[ys.length-1]-8);
 }
 
 function drawRthChart(canvas,iter){
@@ -738,9 +745,8 @@ function updatePanels(iter){
   if(metEl) metEl.innerHTML=buildLogHTML(vis.slice(-3),false);
   const rc=document.getElementById('rth-chart');
   if(rc) drawRthChart(rc,iter);
-  const gpu=telSlice(iter);
   const gc=document.getElementById('gpu-chart');
-  if(gc) drawSparkline(gc,gpu,'#00FF88');
+  if(gc) drawSparkline(gc,GPU_REAL,'#00FF88');
 }
 
 // ── Live state polling ────────────────────────────────────────────────────────
@@ -821,6 +827,9 @@ async function fetchState(){
     // Live badge
     const badge=document.getElementById('live-badge');
     if(badge)badge.style.display=s.from_cluster?'inline-block':'none';
+
+    // Real GPU telemetry
+    if(Array.isArray(s.gpu_telemetry)&&s.gpu_telemetry.length>0) GPU_REAL=s.gpu_telemetry;
 
     // Auto-follow current cluster iter when loop is running.
     // Skip the very first poll (page opens at baseline) and respect manual scrubbing
