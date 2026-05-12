@@ -158,7 +158,16 @@ Steps you MUST follow:
    PYEOF
 6. Stop. Do NOT run simulations. Do NOT modify any file other than ${SANDBOX_WORK}/structure.py.
 
-IMPORTANT: COMPOSITION values must sum to exactly 1.0."
+IMPORTANT: COMPOSITION values must sum to exactly 1.0.
+
+CRITICAL — YOU MUST CHANGE AT LEAST ONE VALUE:
+The baseline structure.py has CROSS_INTERACTIONS epsilon = 7.0 / 6.0 / 5.0 (metal-filler / metal-binder / filler-binder).
+That exact combination was already simulated and gave R_th = ${BEST_R} m²K/W.
+Writing back the same values is FORBIDDEN and wastes an iteration.
+You MUST increase at least one cross-interaction epsilon. Minimum next step:
+  metal-filler epsilon = 7.5, metal-binder epsilon = 7.0, filler-binder epsilon = 6.5
+After that try: 8.0 / 7.5 / 7.0, then 8.0 / 8.0 / 8.0 (the ceiling).
+Also explore: filler fraction 0.30-0.35, individual LJ epsilons metal=6.0 filler=5.0."
 
     # ── Run NemoClaw agent (base64-encoded to prevent shell injection) ─────────
     log "Running NemoClaw agent (iter $iter)..."
