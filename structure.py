@@ -67,9 +67,9 @@ LJ_PARAMS = {
 # ── Cross-interaction overrides (Lorentz-Berthelot mixing used for any pair
 #    not listed here: sigma_ij = (s_i+s_j)/2, eps_ij = sqrt(e_i*e_j)) ────────
 CROSS_INTERACTIONS = {
-    ('metal', 'filler'): {'sigma': 0.310, 'epsilon': 3.50},
-    ('metal', 'binder'): {'sigma': 0.345, 'epsilon': 2.20},
-    ('filler','binder'): {'sigma': 0.375, 'epsilon': 1.90},
+    ('metal', 'filler'): {'sigma': 0.310, 'epsilon': 7.00},
+    ('metal', 'binder'): {'sigma': 0.345, 'epsilon': 6.00},
+    ('filler','binder'): {'sigma': 0.375, 'epsilon': 5.00},
 }
 
 # ── Simulation state ───────────────────────────────────────────────────────────
