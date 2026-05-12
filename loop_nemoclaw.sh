@@ -186,7 +186,8 @@ IMPORTANT: COMPOSITION values must sum to exactly 1.0."
 
     # ── Validate ──────────────────────────────────────────────────────────────
     if ! $PYTHON -m py_compile structure.py 2>/tmp/syntax_err.txt; then
-        log "WARNING: syntax error — skipping. $(cat /tmp/syntax_err.txt)"
+        log "WARNING: syntax error in structure.py — skipping."
+        log "$(cat /tmp/syntax_err.txt)"
         cp "$REPO_DIR/structure.py.baseline" structure.py; continue
     fi
 
@@ -263,6 +264,7 @@ except: print('no')
         log "NEW BEST — keeping."
         if [ -n "$NANOTUBE_GEOM" ]; then
             echo "$NANOTUBE_GEOM" > "$REPO_DIR/nanotube_geometry_best.json"
+            log "Saved nanotube geometry for new best (iter $iter)."
         fi
     else
         STATUS="discard"
@@ -362,13 +364,26 @@ REPORT_OUT=$(sbox "printf '%s' '${PROMPT_B64}' | base64 -d > /tmp/report_prompt.
         --json --timeout 600" 2>&1)
 
 if [ $? -eq 0 ] && [ -n "$REPORT_OUT" ]; then
+    log "Manufacturing report saved to: $REPORT_FILE"
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════════╗"
+    echo "║           MANUFACTURING FORMULATION REPORT                   ║"
+    echo "╚══════════════════════════════════════════════════════════════╝"
+    echo "Generated: $REPORT_DATE"
+    echo "Best thermal_resistance: $BEST_R m²K/W  (commit: $BEST_COMMIT)"
+    echo "Full report: $REPORT_FILE"
+    echo "---"
     echo "$REPORT_OUT" | tee "$REPORT_FILE"
 else
     log "WARNING: NemoClaw report failed — writing fallback report."
     {
         echo "THERMAL INTERFACE MATERIAL — MANUFACTURING FORMULATION REPORT"
         echo "Generated: $REPORT_DATE"
-        echo "Best formulation — commit: $BEST_COMMIT  R_th: $BEST_R m²K/W"
+        echo "Research loop: $MAX_ITER iterations, GROMACS 2025.1 NVT-MD on 4x NVIDIA Blackwell GB10"
+        echo ""
+        echo "═══ BEST FORMULATION ═══"
+        echo "Commit:              $BEST_COMMIT"
+        echo "Thermal resistance:  $BEST_R m²K/W"
         echo ""
         echo "=== structure.py parameters ==="
         cat "$BEST_STRUCT"
@@ -409,6 +424,7 @@ PYEOF
         awk -F'\t' '$4 == "keep"' results.tsv 2>/dev/null | sort -t$'\t' -k2 -g \
             | awk -F'\t' '{printf "  %-10s  R=%-15s  t=%-8s  %s\n", $1, $2, $3, $5}'
     } | tee "$REPORT_FILE"
+    log "Fallback report saved to: $REPORT_FILE"
 fi
 
 git add "$REPORT_FILE" 2>/dev/null || true
