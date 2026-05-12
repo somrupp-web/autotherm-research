@@ -3,7 +3,7 @@
 ## Task
 Optimize a Thermal Interface Material (TIM) for GPU/CPU die-to-heatsink bonding.
 Metric: **thermal_resistance** (m²K/W). **Lower is better.**
-Target: Reach < 2.0e-8 m²K/W (competitive with best commercial liquid-metal TIMs).
+Target: Reach < 1.0e-8 m²K/W (competitive with best commercial liquid-metal TIMs).
 
 The physical system: A 3-component LJ fluid represents a TIM layer:
 - **Metal**: Liquid In-Ga alloy matrix (high intrinsic conductivity, heavy atoms).
@@ -47,6 +47,9 @@ the cross-component LJ interaction energy per unit area. Maximize coupling → m
 1. **Strengthen cross-interactions** — increase `CROSS_INTERACTIONS` epsilon values.
    The metal-filler interface is most important (both have high individual conductivity;
    if they couple well, heat transfers efficiently across both materials).
+   **Best result to date used cross-eps = 7.0 / 6.0 / 5.0 (metal-filler / metal-binder / filler-binder).**
+   Explore the 7.0–8.0 range for all three pairs — this is the single highest-impact lever.
+   Try: metal-filler eps=7.5, metal-binder eps=7.0, filler-binder eps=6.5.
 
 2. **Optimize size matching** — when `sigma_ij` for a cross-pair is close to the
    arithmetic mean of `sigma_i` and `sigma_j`, the Lennard-Jones potential well is
@@ -68,9 +71,9 @@ the cross-component LJ interaction energy per unit area. Maximize coupling → m
    N=16000 is the standard; N=24000-32000 for final refinement.
 
 ### Example promising direction
-If current best uses epsilon(metal-filler)=3.5, try bumping to 5.0–6.0
-to simulate a surface-functionalized graphene that bonds chemically to InGa.
-Simultaneously increase filler fraction to 0.30 and reduce binder to 0.10.
+The best-ever result achieved R_th=4.55e-06 with cross-eps = 7.0/6.0/5.0.
+Push all three pairs toward the ceiling (8.0): try metal-filler eps=7.5, metal-binder eps=7.0,
+filler-binder eps=6.5. Simultaneously use filler fraction ≈ 0.30–0.32 and binder ≈ 0.13–0.15.
 
 ---
 
@@ -98,8 +101,9 @@ Do not add any print() calls to structure.py. Only prepare.py prints results.
 
 ### 4. SIM_TIME_PS must stay within budget
 If SIM_TIME_PS is too large and the simulation exceeds 4 min wall clock,
-prepare.py will kill the job and the iteration is wasted. Keep SIM_TIME_PS ≤ 300
-unless you're confident the system is small (N_TOTAL < 2000).
+prepare.py will kill the job and the iteration is wasted. For exploration, keep
+SIM_TIME_PS in the range 80–120 ps. Use 200–300 ps only to confirm a promising
+composition (not for routine search iterations).
 
 ---
 
