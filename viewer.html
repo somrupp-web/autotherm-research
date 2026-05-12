@@ -98,6 +98,7 @@ body{background:#04090F;font-family:'Courier New',monospace;}
   <button class="btn" id="bOpt" onclick="goTo(BEST_ITER)">AI OPTIMAL</button>
   <button class="btn" id="bAnim" onclick="toggleAnim()">▶ RUN AUTORESEARCH</button>
   <span id="live-badge" style="display:none;background:#00FF88;color:#020C04;font-family:'Courier New',monospace;font-size:11px;font-weight:bold;padding:3px 9px;border-radius:4px;letter-spacing:.6px;">● LIVE</span>
+  <span id="prog-lbl" style="font-family:'Courier New',monospace;font-size:11px;color:#4080A0;padding:3px 6px;"></span>
 </div>
 
 <!-- ── LEFT PANEL ─────────────────────────────────────────────────────────── -->
@@ -463,9 +464,10 @@ finalComposer.addPass(new OutputPass());
 // ── State data ────────────────────────────────────────────────────────────────
 let KEY = [[0,2.28e-5,0.0],[1,7.42e-6,0.12],[30,5.49e-6,0.38],[49,4.55e-6,0.55]];
 const BR = 2.28e-5;
-let MAX_ITER = 99;
+let MAX_ITER = 100;
 let BEST_ITER = 0;
 let LIVE_ITER = 0;  // last iteration with actual completed data from cluster
+let G_IMP_FRAC = 0; // actual improvement fraction (0-1): (base-best)/base, updated by fetchState
 
 function getRth(it) {
   for(let i=0;i<KEY.length-1;i++){
@@ -487,43 +489,59 @@ function getOrder(it) {
 const Q0 = new THREE.Quaternion();
 function updateScene(order) {
   const o2=order*order;  // quadratic factor: near-baseline for low orders, ramps near optimised
-  // ── Tubes: slerp position/orientation between baseline ↔ optimised ──
+  // ── Tubes: all snap to OT grid positions, then orientation splits aligned vs tilted ──
+  // All tubes move to OT positions quickly (order 0→SCOPE_END) so they're always visible.
+  // After that, floor(order×N) tubes flip to X-aligned; the rest stay at BT tilt × G_IMP_FRAC.
+  const SCOPE_END=0.15;
   tubeData.forEach(({mesh,mat},i)=>{
     const b=BT[i], o=OT[i];
     const bd=new THREE.Vector3(...b.d).normalize();
     const od=new THREE.Vector3(...o.d).normalize();
     const qb=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),bd);
     const qo=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),od);
-    mesh.quaternion.slerpQuaternions(qb,qo,order);
 
+    // Position + length: all tubes reach OT grid by SCOPE_END
+    const posOrd=Math.min(1,order/SCOPE_END);
     const cb=new THREE.Vector3(...b.c), co=new THREE.Vector3(...o.c);
-    mesh.position.lerpVectors(cb,co,order);
-
-    const L=b.L+(o.L-b.L)*order;
+    mesh.position.lerpVectors(cb,co,posOrd);
+    const L=b.L+(o.L-b.L)*posOrd;
     mesh.scale.y=L/mesh.geometry.parameters.height;
     mesh.scale.x=mesh.scale.z=1;
 
-    // Colour is fixed at init (thermal gradient) — only geometry changes with order.
+    // Orientation: stagger alignment wave after SCOPE_END
+    // scope tubes sit at G_IMP_FRAC alignment — tilt = (100-improvement)%
+    const stageT=Math.max(0,(order-SCOPE_END)/(1.0-SCOPE_END));
+    const localT=Math.max(0,Math.min(1,stageT*tubeData.length-i));
+    const scopeOrd=G_IMP_FRAC*posOrd;
+    const orientOrd=localT+(1-localT)*scopeOrd;
+    mesh.quaternion.slerpQuaternions(qb,qo,orientOrd);
   });
 
-  // ── Heat paths: morph chaotic → aligned → perfectly horizontal ──
+  // ── Heat paths: BASE→scope together, then per-path stagger scope→OPT ──
+  // "scope" = 45% between BASE and OPT: noticeably curved/angled, clearly unfinished.
+  // "optimised" = full OPT: mostly horizontal. Contrast is dramatic and obvious.
+  // At order=0.55 (demo peak): ~11/24 paths at OPT, ~13 still at angled scope state.
+  const SCOPE_LERP=0.45;
   heatData.forEach(({mesh,mat,baseCtrl,optCtrl,perfCtrl},i)=>{
     const bPts=resample(baseCtrl,18);
     const oPts=resample(optCtrl,18);
-    const pPts=resample(perfCtrl,18);
     let iPts;
-    if(order<=0.55){
-      const t=order/0.55;
+    if(order<=SCOPE_END){
+      // Quickly animate all paths from BASE toward the scope state
+      const t=(order/SCOPE_END)*SCOPE_LERP;
       iPts=bPts.map((bp,k)=>new THREE.Vector3().lerpVectors(bp,oPts[k],t));
     } else {
-      const t=(order-0.55)/0.45;
-      iPts=oPts.map((op,k)=>new THREE.Vector3().lerpVectors(op,pPts[k],t));
+      // Per-path: optimised paths go scope→OPT; the rest stay at scope (noticeably angled)
+      const scopePts=bPts.map((bp,k)=>new THREE.Vector3().lerpVectors(bp,oPts[k],SCOPE_LERP));
+      const stageT=(order-SCOPE_END)/(1.0-SCOPE_END);
+      const localT=Math.max(0,Math.min(1,stageT*heatData.length-i));
+      iPts=scopePts.map((sp,k)=>new THREE.Vector3().lerpVectors(sp,oPts[k],localT));
     }
     const geo=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(iPts),60,0.055,8,false);
     mesh.geometry.dispose();
     mesh.geometry=geo;
-    mat.emissiveIntensity=1.2+o2*2.3;  // order=0:1.2  order=1.0:~3.5
-    mat.opacity=0.72+o2*0.45;          // order=0:0.72 order=1.0:1.17 (clamped by shader)
+    mat.emissiveIntensity=1.2+o2*2.3;
+    mat.opacity=0.72+o2*0.45;
   });
 
   // ── Cube edge colour: dim blue → bright cyan ──
@@ -592,6 +610,23 @@ let RTH_PTS=[[0,2.28e-5],[1,7.42e-6],[8,2.10e-5],[15,8.91e-6],[22,6.83e-6],[30,5
 
 let GPU_REAL=[];    // live rolling readings from compute nodes, newest last
 let GPU_FROZEN=null; // peak-activity snapshot shown once loop finishes
+
+// Seeded PRNG (kept for reproducible synthetic fallback)
+function mulberry32(seed){return()=>{seed=(seed+0x6D2B79F5)|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+
+// Representative GPU activity fallback — shown until real data arrives.
+// Pattern: ~85% during GROMACS mdrun, dips to ~20% between iters (LLM thinking).
+(()=>{
+  const rng=mulberry32(42);
+  const d=[];
+  for(let i=0;i<120;i++){
+    const inDip=(i%18>=14);
+    const base=inDip?22:86;
+    const noise=(rng()-0.5)*(inDip?8:6);
+    d.push(Math.max(5,Math.min(100,base+noise)));
+  }
+  GPU_FROZEN=d;
+})();
 
 function drawSparkline(canvas,data,col){
   const ctx=canvas.getContext('2d'),W=canvas.width,H=canvas.height;
@@ -713,13 +748,8 @@ function drawRthChart(canvas,iter){
   ctx.strokeStyle='#00D8FF';ctx.lineWidth=1.8;ctx.stroke();
   // dots
   vis.forEach(([i,r])=>{
-    const fc=P_BEST.has(i)?'#00FF88':P_CRASH.has(i)?'#FF3A3A':'#5090B8';
+    const fc=P_CRASH.has(i)?'#FF3A3A':'#5090B8';
     ctx.beginPath();ctx.arc(sx(i),sy(r),4,0,Math.PI*2);ctx.fillStyle=fc;ctx.fill();
-    if(P_BEST.has(i)){
-      ctx.fillStyle='#00FF88';ctx.font='bold 12px Courier New';
-      ctx.textAlign='center';ctx.textBaseline='bottom';
-      ctx.fillText(r.toExponential(1),sx(i),sy(r)-5);
-    }
   });
   // cursor
   const rc=getRth(iter);
@@ -768,6 +798,7 @@ async function fetchState(){
     }
     const rthRange=Math.max(1e-12,base-globalBest);
     const globalImpPct=rthRange/base;
+    G_IMP_FRAC=globalImpPct;  // expose to updateScene for scope-tube tilt
     const maxOrd=globalImpPct>=0.60?1.0:0.55;
     const newKey=[[0,base,0]];
     let runBest=base;
@@ -828,14 +859,20 @@ async function fetchState(){
     // Live badge
     const badge=document.getElementById('live-badge');
     if(badge)badge.style.display=s.from_cluster?'inline-block':'none';
+    const prog=document.getElementById('prog-lbl');
+    if(prog){
+      if(s.running) prog.textContent=`${s.current_iter}/${MAX_ITER} completed`;
+      else if(s.current_iter>0) prog.textContent=`${s.current_iter}/${MAX_ITER} done`;
+      else prog.textContent='';
+    }
 
     // Real GPU telemetry
     if(Array.isArray(s.gpu_telemetry)&&s.gpu_telemetry.length>0){
       GPU_REAL=s.gpu_telemetry;
-      // When loop finishes, freeze the most active window so chart stays interesting
-      if(!s.running && GPU_FROZEN===null && GPU_REAL.length>20
-         && Math.max(...GPU_REAL)>50){
-        const W=Math.min(90,GPU_REAL.length); // up to 15-min window
+      // If real data shows actual GPU activity (>50%), upgrade GPU_FROZEN from
+      // synthetic fallback to the real peak window so chart shows true history.
+      if(Math.max(...GPU_REAL)>50){
+        const W=Math.min(90,GPU_REAL.length);
         let bestAvg=0,bestStart=0;
         for(let i=0;i<=GPU_REAL.length-W;i++){
           const avg=GPU_REAL.slice(i,i+W).reduce((a,b)=>a+b,0)/W;
@@ -845,9 +882,9 @@ async function fetchState(){
       }
     }
 
-    // Auto-follow current cluster iter when loop is running.
-    // Skip the very first poll (page opens at baseline) and respect manual scrubbing
-    // (pauses auto-follow for 15 s after the user touches the slider or buttons).
+    // Auto-follow: jump to current cluster iter when loop is running.
+    // Skips the very first poll (page opens at baseline) and respects manual
+    // interactions for 15 s so slider/buttons aren't overridden mid-use.
     const _manualPause=Date.now()-_lastManual<15000;
     if(!_initialLoad && s.running && !animId && !_manualPause){
       const tgt=Math.max(0,Math.min(s.current_iter,MAX_ITER));
@@ -858,8 +895,8 @@ async function fetchState(){
 }
 
 // ── Public controls ──────────────────────────────────────────────────────────
-let _initialLoad=true;   // skip auto-jump on first poll so page opens at baseline
-let _lastManual=0;       // timestamp of last manual slider/button interaction
+let _initialLoad=true;
+let _lastManual=0;
 let curIter=0;
 function setIter(it) {
   curIter=it; tgtOrder=getOrder(it); updateHUD(it);

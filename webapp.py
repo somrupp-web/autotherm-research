@@ -14,7 +14,7 @@ import matplotlib.colors as mcolors
 import numpy as np
 import io, time, threading, os, json
 from PIL import Image
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 import logging
 import paramiko
 
@@ -123,7 +123,11 @@ def _build_state():
         desc = parts[4].strip() if len(parts) > 4 else ""
         try:    rth = float(rth_str)
         except: rth = None
-        rows.append({"rth": rth, "status": status, "desc": desc})
+        # Extract explicit iter number from description (e.g. "iter-44:")
+        import re as _re
+        m = _re.search(r'iter-(\d+)', desc)
+        iter_num = int(m.group(1)) if m else None
+        rows.append({"rth": rth, "status": status, "desc": desc, "iter_num": iter_num})
 
     hist = [{"iter": 0, "rth": BASELINE_RTH, "status": "keep",
               "desc": "BASELINE — Disordered CNT network (human guess)"}]
@@ -136,6 +140,9 @@ def _build_state():
 
     alignment = max(0.0, min(1.0, (BASELINE_RTH - running_best) / BASELINE_RTH))
     n = len(rows)
+    # Use the highest explicit iter number from descriptions (more reliable than row count,
+    # since crashes sometimes skip writing a row — n can be < 100 even when loop finished)
+    max_iter_seen = max((r["iter_num"] for r in rows if r["iter_num"] is not None), default=n)
     best_iter = max((i+1 for i,r in enumerate(rows) if r["status"]=="keep" and r["rth"] is not None),
                    default=0)
 
@@ -151,9 +158,9 @@ def _build_state():
 
     return {
         "from_cluster":          live,
-        "running":               live and n < 100,
+        "running":               live and max_iter_seen < 100,
         "current_iter":          n,
-        "total_iters":           max(100, n + 1),
+        "total_iters":           max(100, max_iter_seen + 1),
         "best_iter":             best_iter,
         "baseline_rth":          BASELINE_RTH,
         "best_rth":              running_best,
@@ -165,17 +172,23 @@ def _build_state():
     }
 
 def get_state():
-    """Return cached cluster state, refreshing every 5 s."""
+    """Return cached state immediately — never blocks."""
     with _state_lock:
-        now = time.time()
-        if _state_cache["data"] is None or now - _state_cache["ts"] > 5:
-            try:
-                _state_cache["data"] = _build_state()
-            except Exception as e:
-                if _state_cache["data"] is None:
-                    _state_cache["data"] = {"error": str(e), "current_iter": 0, "rth_history": []}
-            _state_cache["ts"] = now
-        return _state_cache["data"]
+        return _state_cache["data"] or {"current_iter": 0, "rth_history": [], "running": False}
+
+def _state_refresh_loop():
+    """Background thread: refresh cluster state every 5 s without blocking HTTP."""
+    while True:
+        try:
+            data = _build_state()
+            with _state_lock:
+                _state_cache["data"] = data
+                _state_cache["ts"] = time.time()
+        except Exception:
+            pass
+        time.sleep(5)
+
+threading.Thread(target=_state_refresh_loop, daemon=True).start()
 
 class _SilentHandler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
@@ -195,7 +208,7 @@ class _SilentHandler(SimpleHTTPRequestHandler):
 
 def _start_viewer_server():
     try:
-        srv = HTTPServer(('localhost', 7863), _SilentHandler)
+        srv = ThreadingHTTPServer(('localhost', 7863), _SilentHandler)
         srv.serve_forever()
     except OSError:
         pass  # already bound

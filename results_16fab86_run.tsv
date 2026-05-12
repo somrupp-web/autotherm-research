@@ -1,0 +1,93 @@
+commit	thermal_resistance	sim_time_s	status	description
+97e3fc8	N/A	N/A	crash	node-0 iter-1: unknown
+16fab86	7.974241E-06	272.1	keep	node-0 iter-2: structure.py — Thermal Interface Material (TIM) composition.
+ab5db6f	N/A	N/A	crash	node-0 iter-4: unknown
+2bfb210	N/A	N/A	crash	node-0 iter-5: unknown
+09fff05	1.166446E-05	164.0	discard	node-0 iter-6: structure.py — Thermal Interface Material (TIM) composition.
+9867061	N/A	N/A	crash	node-0 iter-7: unknown
+42012b5	8.211722E-06	263.5	discard	node-0 iter-8: structure.py — Thermal Interface Material (TIM) composition.
+934ff85	1.115989E-05	201.9	discard	node-0 iter-9: structure.py — Thermal Interface Material (TIM) composition.
+740a235	1.150381E-05	201.9	discard	node-0 iter-10: structure.py — Thermal Interface Material (TIM) composition.
+d92b2d4	N/A	N/A	crash	node-0 iter-11: unknown
+a4bb028	1.115742E-05	197.8	discard	node-0 iter-12: structure.py — Thermal Interface Material (TIM) composition.
+5780286	1.011779E-05	137.3	discard	node-0 iter-13: structure.py — Thermal Interface Material (TIM) composition.
+437f62e	1.040364E-05	153.6	discard	node-0 iter-15: structure.py — Thermal Interface Material (TIM) composition.
+6eb3d6a	1.180991E-05	169.0	discard	node-0 iter-16: structure.py — Thermal Interface Material (TIM) composition.
+4547523	1.121594E-05	198.3	discard	node-0 iter-17: structure.py — Thermal Interface Material (TIM) composition.
+b63eb99	N/A	N/A	crash	node-0 iter-18: unknown
+8ec373b	1.155483E-05	202.2	discard	node-0 iter-19: structure.py — Thermal Interface Material (TIM) composition.
+559652b	1.134340E-05	197.3	discard	node-0 iter-20: structure.py — Thermal Interface Material (TIM) composition.
+c49bf28	8.082817E-06	269.2	discard	node-0 iter-22: structure.py — Thermal Interface Material (TIM) composition.
+9e3b314	1.145535E-05	195.1	discard	node-0 iter-23: structure.py — Thermal Interface Material (TIM) composition.
+cc18700	N/A	N/A	crash	node-0 iter-24: unknown
+54aa609	1.148859E-05	202.4	discard	node-0 iter-25: structure.py — Thermal Interface Material (TIM) composition.
+c7b5532	8.655762E-06	225.4	discard	node-0 iter-26: structure.py — Thermal Interface Material (TIM) composition.
+12f5394	1.145756E-05	194.1	discard	node-0 iter-27: structure.py — Thermal Interface Material (TIM) composition.
+542a2d2	1.178867E-05	163.0	discard	node-0 iter-28: structure.py — Thermal Interface Material (TIM) composition.
+9f93306	9.713573E-06	162.8	discard	node-0 iter-29: structure.py — Thermal Interface Material (TIM) composition.
+2bef654	1.115952E-05	203.7	discard	node-0 iter-30: structure.py — Thermal Interface Material (TIM) composition.
+13e9fe1	8.185125E-06	209.2	discard	node-0 iter-31: structure.py — Thermal Interface Material (TIM) composition.
+9cc491e	1.331698E-05	154.0	discard	node-0 iter-32: TIM optimization
+7944143	1.054629E-05	203.4	discard	node-0 iter-33: structure.py — Thermal Interface Material (TIM) composition.
+3deb583	1.171916E-05	160.0	discard	node-0 iter-34: structure.py — Thermal Interface Material (TIM) composition.
+75e6613	1.124462E-05	205.8	discard	node-0 iter-35: structure.py — Thermal Interface Material (TIM) composition.
+0d0244f	9.748535E-06	207.2	discard	node-0 iter-36: structure.py — Thermal Interface Material (TIM) composition.
+1b94e1f	1.181062E-05	193.9	discard	node-0 iter-37: structure.py — Thermal Interface Material (TIM) composition.
+37d1941	1.155168E-05	198.6	discard	node-0 iter-38: structure.py — Thermal Interface Material (TIM) composition.
+f50a42e	N/A	N/A	crash	node-0 iter-39: unknown
+05e922b	1.120502E-05	176.4	discard	node-0 iter-40: structure.py — Thermal Interface Material (TIM) composition.
+dacdfa5	1.128564E-05	201.2	discard	node-0 iter-41: structure.py — Thermal Interface Material (TIM) composition.
+09d690a	1.210681E-05	203.7	discard	node-0 iter-42: structure.py — Thermal Interface Material (TIM) composition.
+58d39e9	1.249544E-05	192.2	discard	node-0 iter-43: structure.py — Thermal Interface Material (TIM) composition.
+fe7f8dc	9.217452E-06	273.4	discard	node-0 iter-44: structure.py — Thermal Interface Material (TIM) composition.
+4b0a1f2	1.217206E-05	173.1	discard	node-0 iter-45: structure.py — Thermal Interface Material (TIM) composition.
+95a3b4d	1.169787E-05	162.3	discard	node-0 iter-46: structure.py — Thermal Interface Material (TIM) composition.
+77a2163	1.159943E-05	201.8	discard	node-0 iter-47: structure.py — Thermal Interface Material (TIM) composition.
+82d6776	1.110030E-05	206.8	discard	node-0 iter-49: structure.py — Thermal Interface Material (TIM) composition.
+28cc9d6	1.143924E-05	198.2	discard	node-0 iter-50: structure.py — Thermal Interface Material (TIM) composition.
+e73590e	1.112951E-05	193.5	discard	node-0 iter-51: structure.py — Thermal Interface Material (TIM) composition.
+c26912b	N/A	N/A	crash	node-0 iter-52: unknown
+2590146	9.989757E-06	205.5	discard	node-0 iter-53: structure.py — Thermal Interface Material (TIM) composition.
+06fe658	1.025025E-05	156.6	discard	node-0 iter-54: structure.py — Thermal Interface Material (TIM) composition.
+645e71b	1.125923E-05	206.0	discard	node-0 iter-55: structure.py — Thermal Interface Material (TIM) composition.
+83e0a4f	1.228645E-05	160.4	discard	node-0 iter-56: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+3211196	1.115062E-05	218.1	discard	node-0 iter-57: structure.py — Thermal Interface Material (TIM) composition.
+f8be47b	1.204588E-05	187.7	discard	node-0 iter-58: structure.py — Thermal Interface Material (TIM) composition.
+67f7a9c	1.111489E-05	203.4	discard	node-0 iter-59: structure.py — Thermal Interface Material (TIM) composition.
+ec6f138	1.148233E-05	206.9	discard	node-0 iter-60: structure.py — Thermal Interface Material (TIM) composition.
+3e86283	1.177440E-05	206.1	discard	node-0 iter-61: structure.py — Thermal Interface Material (TIM) composition.
+d43522f	1.121254E-05	202.3	discard	node-0 iter-62: structure.py — Thermal Interface Material (TIM) composition.
+42b424f	N/A	N/A	crash	node-0 iter-63: unknown
+6fd13e9	1.095766E-05	166.0	discard	node-0 iter-64: TIM optimization
+7e7b1b4	1.012638E-05	204.4	discard	node-0 iter-65: structure.py — Thermal Interface Material (TIM) composition.
+c9c4a9d	N/A	N/A	crash	node-0 iter-66: unknown
+9e602b8	1.126922E-05	203.3	discard	node-0 iter-67: structure.py — Thermal Interface Material (TIM) composition.
+a3acd69	N/A	N/A	crash	node-0 iter-68: unknown
+4b264cb	1.135460E-05	199.8	discard	node-0 iter-69: structure.py — Thermal Interface Material (TIM) composition.
+0ffcdde	1.063011E-05	179.8	discard	node-0 iter-70: structure.py — Thermal Interface Material (TIM) composition.
+0caf664	1.162508E-05	196.3	discard	node-0 iter-72: structure.py — Thermal Interface Material (TIM) composition.
+84bc9d2	N/A	N/A	crash	node-0 iter-73: unknown
+9d72ec6	1.180875E-05	162.2	discard	node-0 iter-74: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+1323775	1.111085E-05	201.0	discard	node-0 iter-76: structure.py — Thermal Interface Material (TIM) composition.
+ef31496	1.107724E-05	222.2	discard	node-0 iter-77: structure.py — Thermal Interface Material (TIM) composition.
+f43b44a	1.180623E-05	166.9	discard	node-0 iter-78: structure.py — Thermal Interface Material (TIM) composition.
+e04b7d4	N/A	N/A	crash	node-0 iter-79: unknown
+4ad1c43	1.078026E-05	209.6	discard	node-0 iter-80: structure.py — Thermal Interface Material (TIM) composition.
+53290a5	1.136451E-05	201.6	discard	node-0 iter-81: structure.py — Thermal Interface Material (TIM) composition.
+642da9e	1.244666E-05	221.0	discard	node-0 iter-82: structure.py — Thermal Interface Material (TIM) composition.
+c7e8ea2	1.257743E-05	189.1	discard	node-0 iter-83: structure.py — Thermal Interface Material (TIM) composition.
+d355ce1	N/A	N/A	crash	node-0 iter-84: unknown
+5fb39c4	1.194526E-05	202.9	discard	node-0 iter-86: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+c0cb015	9.719414E-06	184.3	discard	node-0 iter-87: structure.py — Thermal Interface Material (TIM) composition.
+e507eef	1.144410E-05	214.1	discard	node-0 iter-88: structure.py — Thermal Interface Material (TIM) composition.
+c9dccd9	1.102750E-05	198.0	discard	node-0 iter-89: structure.py — Thermal Interface Material (TIM) composition.
+ff96e09	1.143812E-05	204.7	discard	node-0 iter-90: structure.py — Thermal Interface Material (TIM) composition.
+1e4d666	8.359989E-06	277.3	discard	node-0 iter-91: structure.py — Thermal Interface Material (TIM) composition.
+df09c5b	1.150395E-05	200.6	discard	node-0 iter-92: structure.py — Thermal Interface Material (TIM) composition.
+e7067f4	1.217680E-05	162.6	discard	node-0 iter-94: structure.py — Thermal Interface Material (TIM) composition.
+0681b3b	1.171944E-05	163.5	discard	node-0 iter-95: structure.py — Thermal Interface Material (TIM) composition.
+9248039	N/A	N/A	crash	node-0 iter-96: unknown
+86f061e	1.194194E-05	164.0	discard	node-0 iter-97: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+be5ce7c	N/A	N/A	crash	node-0 iter-98: unknown
+8df33c6	1.223196E-05	163.2	discard	node-0 iter-99: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+523df22	1.142436E-05	200.1	discard	node-0 iter-100: structure.py — Thermal Interface Material (TIM) composition.
