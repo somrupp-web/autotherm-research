@@ -71,9 +71,27 @@ the cross-component LJ interaction energy per unit area. Maximize coupling → m
    N=16000 is the standard; N=24000-32000 for final refinement.
 
 ### Example promising direction
-The best-ever result achieved R_th=4.55e-06 with cross-eps = 7.0/6.0/5.0.
+The best-ever result achieved R_th=4.91e-06 with cross-eps = 7.0/6.0/5.0.
 Push all three pairs toward the ceiling (8.0): try metal-filler eps=7.5, metal-binder eps=7.0,
 filler-binder eps=6.5. Simultaneously use filler fraction ≈ 0.30–0.32 and binder ≈ 0.13–0.15.
+
+---
+
+## !! MANDATORY — You MUST change structure.py every iteration !!
+
+**The baseline already uses cross-eps = 7.0 / 6.0 / 5.0. That exact configuration was
+already run and gave R_th = 4.91e-06. Returning structure.py unchanged is FORBIDDEN —
+it wastes an iteration and makes no progress.**
+
+Every iteration you MUST modify at least one parameter. Suggested progression:
+- Step 1: metal-filler=7.5, metal-binder=7.0, filler-binder=6.5
+- Step 2: metal-filler=8.0, metal-binder=7.5, filler-binder=7.0
+- Step 3: metal-filler=8.0, metal-binder=8.0, filler-binder=8.0
+- Also explore: filler fraction 0.30–0.35, binder fraction 0.10–0.13
+- Also explore: individual LJ epsilons — metal=6.0, filler=5.0
+
+If you think the baseline is already optimal, **you are wrong** — the ceiling is 8.0 and
+we are nowhere near it. Always push at least one epsilon higher than the baseline.
 
 ---
 
