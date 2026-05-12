@@ -10,9 +10,8 @@
 # ============================================================
 
 REPO_DIR="/home/nvidia/autotherm"
-export PATH="/home/nvidia/.bun/bin:$PATH"
-OPENCODE=$(find /home/nvidia/.local/bin /home/nvidia/.local/share/fnm /home/nvidia/.bun/install/global/node_modules/opencode-ai/bin -name opencode -type f 2>/dev/null | head -1)
-MODEL="vllm//home/nvidia/models/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"
+AGENT_SCRIPT="$REPO_DIR/call_nemotron.py"
+MODEL="/home/nvidia/models/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"
 MAX_ITER="${1:-100}"
 NODE_ID="${NODE_ID:-0}"
 CLUSTER_SIZE="${CLUSTER_SIZE:-1}"
@@ -39,9 +38,9 @@ echo "╚═══════════════════════�
 echo ""
 
 # ── Prerequisites ─────────────────────────────────────────────
-[ -z "$OPENCODE" ] && { log "ERROR: opencode not found"; exit 1; }
 [ ! -f "$GMX" ]    && { log "ERROR: gmx_mpi not found at $GMX. Build GROMACS first."; exit 1; }
-log "OpenCode : $OPENCODE"
+[ ! -f "$AGENT_SCRIPT" ] && { log "ERROR: $AGENT_SCRIPT not found"; exit 1; }
+log "Agent    : $AGENT_SCRIPT"
 log "Model    : $MODEL"
 log "GROMACS  : $GMX  ($($GMX --version 2>&1 | grep 'GROMACS version' | head -1))"
 
@@ -100,50 +99,23 @@ fi
 for iter in $(seq 1 "$MAX_ITER"); do
     log "══════ Iteration $iter / $MAX_ITER ══════"
 
-    # Reset to baseline each iteration (Qwen proposes from scratch based on results.tsv)
+    # Reset to baseline each iteration (LLM proposes from scratch based on results.tsv)
     cp "$REPO_DIR/structure.py.baseline" structure.py
     log "Reset structure.py to baseline."
 
     sync_global_results
 
     BEST_R=$(awk -F'\t' '$4 == "keep" {print $2}' results.tsv 2>/dev/null \
-             | sort -n | head -1)
-    BEST_R="${BEST_R:-9.99e-6}"
+             | sort -g | head -1)
+    BEST_R="${BEST_R:-2.28e-5}"
     TRIED=$(awk -F'\t' '$4 == "keep" || $4 == "discard"' results.tsv 2>/dev/null | wc -l || echo 0)
     log "Global best thermal_resistance=$BEST_R  |  Total experiments=$TRIED"
 
-    if [ "$CLUSTER_SIZE" -gt 1 ]; then
-        CONTEXT="You are AI research agent node-${NODE_ID} on a ${CLUSTER_SIZE}-node NVIDIA DGX Spark cluster.
-NOTE: $((CLUSTER_SIZE-1)) other agents run simultaneously — check results.tsv and avoid duplicates."
-    else
-        CONTEXT="You are an AI research agent on a single NVIDIA DGX Spark."
-    fi
-
-    PROMPT="${CONTEXT}
-
-You are a Computational Materials Scientist optimizing a Thermal Interface Material (TIM).
-Current best thermal_resistance = ${BEST_R} m²K/W. LOWER is BETTER.
-
-Steps you MUST follow:
-1. Read ${REPO_DIR}/structure.py
-2. Read ${REPO_DIR}/results.tsv
-3. Read ${REPO_DIR}/program.md
-4. Choose ONE specific change to structure.py that has not been tried yet.
-5. Write the complete new structure.py using the bash tool:
-   cat > ${REPO_DIR}/structure.py << 'PYEOF'
-   [complete new python file]
-   PYEOF
-6. Stop. Do NOT run the simulation yourself. Do NOT modify prepare.py.
-
-IMPORTANT: COMPOSITION values must sum to exactly 1.0.
-Use bash to write the file (step 5). Do NOT use the edit tool."
-
-    log "Running OpenCode agent..."
-    "$OPENCODE" run --model "$MODEL" "$PROMPT"
-    OPENCODE_EXIT=$?
-
-    if [ $OPENCODE_EXIT -ne 0 ]; then
-        log "WARNING: OpenCode exited $OPENCODE_EXIT — skipping."
+    log "Calling Nemotron agent (direct vLLM)..."
+    python3 "$AGENT_SCRIPT" "$REPO_DIR" "$BEST_R" "$TRIED"
+    AGENT_EXIT=$?
+    if [ $AGENT_EXIT -ne 0 ]; then
+        log "WARNING: Agent failed — skipping."
         cp "$REPO_DIR/structure.py.baseline" structure.py
         continue
     fi
@@ -269,9 +241,9 @@ if [ "${NODE_ID}" -eq 0 ]; then
 
     # Find best commit from results.tsv
     BEST_COMMIT=$(awk -F'\t' '$4 == "keep" {print $1, $2}' results.tsv 2>/dev/null \
-                  | sort -k2 -n | head -1 | awk '{print $1}')
+                  | sort -k2 -g | head -1 | awk '{print $1}')
     BEST_R=$(awk -F'\t' '$4 == "keep" {print $2}' results.tsv 2>/dev/null \
-             | sort -n | head -1)
+             | sort -g | head -1)
 
     if [ -z "$BEST_COMMIT" ]; then
         log "No successful iterations found — using baseline structure."
@@ -336,9 +308,8 @@ Write in professional engineering report style. Be specific and quantitative whe
 Output the report as plain text to stdout (it will be saved to a file).
 Use bash to run: echo 'REPORT GENERATED' > /tmp/report_done.txt after writing."
 
-    log "Invoking OpenCode for manufacturing report..."
-    "$OPENCODE" run --model "$MODEL" "$REPORT_PROMPT" > "$REPORT_FILE" 2>&1
-    REPORT_EXIT=$?
+    log "Generating manufacturing report (direct)..."
+    REPORT_EXIT=1  # skip to fallback report generator below
 
     if [ $REPORT_EXIT -eq 0 ] && [ -s "$REPORT_FILE" ]; then
         log "Manufacturing report saved to: $REPORT_FILE"
@@ -352,7 +323,7 @@ Use bash to run: echo 'REPORT GENERATED' > /tmp/report_done.txt after writing."
         echo "---"
         cat "$REPORT_FILE"
     else
-        log "WARNING: OpenCode report generation failed (exit=$REPORT_EXIT). Generating fallback report."
+        log "Generating fallback manufacturing report..."
         # Fallback: emit a structured summary from results.tsv + best structure.py directly
         {
             echo "THERMAL INTERFACE MATERIAL — MANUFACTURING FORMULATION REPORT"
@@ -368,7 +339,7 @@ Use bash to run: echo 'REPORT GENERATED' > /tmp/report_done.txt after writing."
             echo ""
             echo "=== Experiment history (keep entries only) ==="
             awk -F'\t' '$4 == "keep"' results.tsv 2>/dev/null \
-                | sort -t$'\t' -k2 -n \
+                | sort -t$'\t' -k2 -g \
                 | awk -F'\t' '{printf "  %-10s  R=%-15s  t=%-8s  %s\n", $1, $2, $3, $5}'
             echo ""
             echo "=== SCALE-UP GUIDANCE ==="
