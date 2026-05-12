@@ -77,7 +77,7 @@ echo ""
 log "NemoClaw : $NEMOCLAW"
 log "OpenShell: $OPENSHELL"
 log "Model    : $MODEL"
-log "GROMACS  : $GMX"
+log "GROMACS  : $GMX  ($($GMX --version 2>&1 | grep 'GROMACS version' | head -1))"
 
 # ── Verify NemoClaw sandbox is accessible ─────────────────────────────────────
 log "Checking NemoClaw sandbox '${SANDBOX_NAME}'..."
@@ -127,8 +127,8 @@ for iter in $(seq 1 "$MAX_ITER"); do
     log "Reset structure.py to baseline."
 
     BEST_R=$(awk -F'\t' '$4 == "keep" {print $2}' results.tsv 2>/dev/null \
-             | sort -n | head -1)
-    BEST_R="${BEST_R:-9.99e-6}"
+             | sort -g | head -1)
+    BEST_R="${BEST_R:-2.28e-5}"
     TRIED=$(awk -F'\t' '$4 == "keep" || $4 == "discard"' results.tsv 2>/dev/null | wc -l || echo 0)
     log "Best thermal_resistance=$BEST_R  |  Total experiments=$TRIED"
 
@@ -290,8 +290,8 @@ log "Loop complete — $MAX_ITER iterations done."
 log "══════ Generating Manufacturing Formulation Report ══════"
 
 BEST_COMMIT=$(awk -F'\t' '$4 == "keep" {print $1, $2}' results.tsv 2>/dev/null \
-              | sort -k2 -n | head -1 | awk '{print $1}')
-BEST_R=$(awk -F'\t' '$4 == "keep" {print $2}' results.tsv 2>/dev/null | sort -n | head -1)
+              | sort -k2 -g | head -1 | awk '{print $1}')
+BEST_R=$(awk -F'\t' '$4 == "keep" {print $2}' results.tsv 2>/dev/null | sort -g | head -1)
 
 if [ -z "$BEST_COMMIT" ]; then
     log "No successful iterations — using baseline."; BEST_COMMIT="HEAD"; BEST_R="N/A"
@@ -305,23 +305,54 @@ git show "${BEST_COMMIT}:structure.py" > "$BEST_STRUCT" 2>/dev/null || cp struct
 REPORT_FILE="$REPO_DIR/manufacturing_report.txt"
 REPORT_DATE=$(date '+%Y-%m-%d %H:%M:%S')
 
-REPORT_PROMPT="You are a materials scientist preparing a manufacturing specification for a Thermal Interface Material.
+REPORT_PROMPT="You are a materials scientist preparing a manufacturing specification for a Thermal Interface Material (TIM).
 
-Research loop completed ${MAX_ITER} GROMACS simulations. Best R_th = ${BEST_R} m²K/W.
-Winning formulation is in ${SANDBOX_WORK}/structure.py.
+The AI research loop has completed ${MAX_ITER} GROMACS molecular dynamics simulations to find the optimal TIM formulation.
 
-Write a professional manufacturing specification report with:
-1. EXECUTIVE SUMMARY — R_th achieved, comparison to commercial TIMs, Go/No-Go
-2. OPTIMAL FORMULATION — wt% and vol%, material identities, supplier grades
-3. INTERFACE CHEMISTRY — cross-interaction analysis, surface treatment recommendations
-4. PROCESSING INSTRUCTIONS — mixing sequence, temperature, layer thickness, application method
-5. PREDICTED PERFORMANCE ENVELOPE — R_th at operating temp, conductivity, sensitivity
-6. SCALE-UP NOTES — batch feasibility, QC method, shelf life
+Best result: thermal_resistance = ${BEST_R} m²K/W (lower is better; target for GPU TIMs: < 1e-5 m²K/W).
+All experiment history is in ${SANDBOX_WORK}/results.tsv.
 
-Output as plain text to stdout."
+The winning formulation parameters are in ${SANDBOX_WORK}/structure.py — read that file first.
 
-log "Uploading best structure.py to sandbox for report..."
+Generate a professional manufacturing specification report with these sections:
+
+1. EXECUTIVE SUMMARY
+   - Best thermal resistance achieved
+   - Comparison to commercial TIMs (typical range: 1e-8 to 1e-6 m²K/W for indium sheets; 1e-6 to 1e-5 for phase-change TIMs)
+   - Go/No-Go recommendation for prototype manufacturing
+
+2. OPTIMAL FORMULATION
+   - Composition by weight percent (derive from COMPOSITION fractions and LJ_PARAMS masses)
+   - Composition by volume percent (derive from COMPOSITION fractions and sigma³ as proxy for molecular volume)
+   - For each component: material identity (metal=InGa eutectic, filler=graphene/h-BN nanoflakes, binder=polysiloxane), supplier grade recommendations, purity requirements
+
+3. INTERFACE CHEMISTRY
+   - Cross-interaction analysis: which component pair has the strongest LJ coupling (lowest epsilon = weakest link in thermal chain)
+   - Surface treatment recommendations to enhance weak interfaces
+   - Wettability notes for InGa on graphene vs silicon vs copper surfaces
+
+4. PROCESSING INSTRUCTIONS
+   - Mixing sequence (add binder first, disperse filler, incorporate metal last — or as LJ params suggest)
+   - Temperature during mixing (use TEMPERATURE parameter from structure.py as processing temp proxy)
+   - Layer thickness target (derive from BOX_L / sqrt(N_TOTAL) as single-layer thickness estimate, in micrometers)
+   - Curing / application method: stencil print vs syringe dispense vs pre-form
+
+5. PREDICTED PERFORMANCE ENVELOPE
+   - Thermal resistance at operating temperature (${BEST_R} m²K/W achieved)
+   - Estimated conductivity range (λ = L/R)
+   - Sensitivity: which parameter has the most impact on performance (based on results.tsv spread)
+
+6. SCALE-UP NOTES
+   - Batch size feasibility
+   - QC test: 4-point thermal impedance measurement method
+   - Shelf life estimate for InGa-based TIMs
+
+Write in professional engineering report style. Be specific and quantitative wherever the simulation data supports it.
+Output the report as plain text to stdout."
+
+log "Uploading best structure.py and results.tsv to sandbox for report..."
 sbox_upload "${SANDBOX_WORK}/structure.py" < "$BEST_STRUCT"
+sbox_upload "${SANDBOX_WORK}/results.tsv"  < "$REPO_DIR/results.tsv"
 
 PROMPT_B64=$(printf '%s' "$REPORT_PROMPT" | base64 -w0)
 REPORT_OUT=$(sbox "printf '%s' '${PROMPT_B64}' | base64 -d > /tmp/report_prompt.txt && \
@@ -338,9 +369,44 @@ else
         echo "THERMAL INTERFACE MATERIAL — MANUFACTURING FORMULATION REPORT"
         echo "Generated: $REPORT_DATE"
         echo "Best formulation — commit: $BEST_COMMIT  R_th: $BEST_R m²K/W"
-        echo ""; cat "$BEST_STRUCT"
-        echo ""; echo "=== Experiment history (keep entries only) ==="
-        awk -F'\t' '$4 == "keep"' results.tsv 2>/dev/null | sort -t$'\t' -k2 -n \
+        echo ""
+        echo "=== structure.py parameters ==="
+        cat "$BEST_STRUCT"
+        echo ""
+        echo "=== SCALE-UP GUIDANCE ==="
+        echo "Material identities:"
+        echo "  metal  → InGa eutectic alloy (In₇₅Ga₂₅ by at%)  — order from Indium Corporation"
+        echo "  filler → Graphene / h-BN nanoflakes (lateral size 1-5 µm, thickness 2-10 nm)"
+        echo "  binder → Polydimethylsiloxane (PDMS) or phenyl-modified polysiloxane, 50-100 cP"
+        echo ""
+        $PYTHON - <<PYEOF
+import importlib.util, math
+spec = importlib.util.spec_from_file_location('s', '$BEST_STRUCT')
+s = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(s)
+comp = s.COMPOSITION
+ljp  = s.LJ_PARAMS
+total_mass = sum(comp[c] * ljp[c]['mass'] for c in comp)
+print("Weight fractions (approx):")
+for c in comp:
+    wf = comp[c] * ljp[c]['mass'] / total_mass
+    print(f"  {c:<8} {wf*100:.1f} wt%  (vol: {comp[c]*100:.1f}%)")
+total_vol = sum(comp[c] * ljp[c]['sigma']**3 for c in comp)
+print()
+print("Volume fractions (sigma^3 proxy):")
+for c in comp:
+    vf = comp[c] * ljp[c]['sigma']**3 / total_vol
+    print(f"  {c:<8} {vf*100:.1f} vol%")
+n = s.N_TOTAL
+avg_sig = sum(ljp[c]['sigma'] for c in ljp) / len(ljp)
+box_l = (n * avg_sig**3 / 0.85)**(1/3)
+layer_um = (box_l / math.sqrt(n)) * 1000
+print(f"\nEstimated TIM layer thickness: {layer_um:.1f} µm")
+print(f"Processing temperature: {s.TEMPERATURE:.0f} K ({s.TEMPERATURE-273.15:.0f} °C)")
+PYEOF
+        echo ""
+        echo "=== Experiment history (keep entries only) ==="
+        awk -F'\t' '$4 == "keep"' results.tsv 2>/dev/null | sort -t$'\t' -k2 -g \
             | awk -F'\t' '{printf "  %-10s  R=%-15s  t=%-8s  %s\n", $1, $2, $3, $5}'
     } | tee "$REPORT_FILE"
 fi
