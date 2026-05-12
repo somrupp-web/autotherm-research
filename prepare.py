@@ -40,7 +40,6 @@ SIM_BUDGET_S = 360   # hard wall: kill mdrun if it exceeds this
 # ── Multi-node MPI + NCCL config ─────────────────────────────────────────────
 HOSTFILE     = "/home/nvidia/autotherm/hostfile_gromacs"  # nodes 1-3 only; node0 reserved for vLLM
 N_RANKS      = 3
-NCCL_LIB     = "/home/nvidia/nccl_spark_cluster/build/lib"
 REMOTE_NODES = ["10.137.203.184", "10.137.203.174", "10.137.203.177"]
 
 def _sync_to_nodes(workdir, *files):
@@ -75,18 +74,15 @@ def _pull_from_rank0(workdir, *files):
                        capture_output=True, timeout=30)
 
 def _mpirun_gpu(tpr_deffnm, workdir, timeout, label, extra_flags=None):
-    """Run gmx_mpi mdrun on all 4 nodes via NCCL-enabled mpirun."""
-    ldpath = f"{NCCL_LIB}:{os.environ.get('LD_LIBRARY_PATH', '')}"
+    """Run gmx_mpi mdrun on nodes 1-3 via UCX RDMA over CX7 (mlx5_0)."""
     cmd = [
         MPIRUN, "-n", str(N_RANKS),
         "--hostfile", HOSTFILE,
         "--map-by", "node",
-        "--mca", "pml", "ob1",
-        "--mca", "btl_tcp_if_include", "enp1s0f0np0",
-        "-x", f"LD_LIBRARY_PATH={ldpath}",
-        "-x", "NCCL_DEBUG=INFO",
-        "-x", "NCCL_SOCKET_IFNAME=enp1s0f0np0",
-        "-x", "NCCL_IB_HCA=mlx5_0",
+        "--mca", "pml", "ucx",          # UCX transport — enables RDMA
+        "-x", "UCX_NET_DEVICES=mlx5_0:1",  # CX7 RDMA device
+        "-x", "UCX_TLS=rc,ud,sm,self",  # RC=RDMA reliable, sm=shared-mem, self=loopback
+        "-x", f"LD_LIBRARY_PATH={os.environ.get('LD_LIBRARY_PATH', '')}",
         GMX, "mdrun", "-v", "-deffnm", tpr_deffnm,
         "-nb", "gpu", "-update", "cpu", "-gpu_id", "0", "-ntomp", NTOMP,
     ]
