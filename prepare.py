@@ -74,15 +74,21 @@ def _pull_from_rank0(workdir, *files):
                        capture_output=True, timeout=30)
 
 def _mpirun_gpu(tpr_deffnm, workdir, timeout, label, extra_flags=None):
-    """Run gmx_mpi mdrun on nodes 1-3 via UCX RDMA over CX7 (mlx5_0)."""
+    """Run gmx_mpi mdrun on nodes 1-3 via RoCEv2 RDMA over CX7 (mlx5_0).
+
+    ob1 PML with btl_tcp_if_include: TCP BTL is configured on enp1s0f0np0
+    (the CX7 RoCEv2 Ethernet interface) as fallback; if the openib BTL is
+    compiled into this OpenMPI build, ob1 selects it as primary transport
+    for RDMA over the CX7 fabric.
+    """
+    ldpath = f"{os.environ.get('LD_LIBRARY_PATH', '')}"
     cmd = [
         MPIRUN, "-n", str(N_RANKS),
         "--hostfile", HOSTFILE,
         "--map-by", "node",
-        "--mca", "pml", "ucx",          # UCX transport — enables RDMA
-        "-x", "UCX_NET_DEVICES=mlx5_0:1",  # CX7 RDMA device
-        "-x", "UCX_TLS=rc,ud,sm,self",  # RC=RDMA reliable, sm=shared-mem, self=loopback
-        "-x", f"LD_LIBRARY_PATH={os.environ.get('LD_LIBRARY_PATH', '')}",
+        "--mca", "pml", "ob1",
+        "--mca", "btl_tcp_if_include", "enp1s0f0np0",
+        "-x", f"LD_LIBRARY_PATH={ldpath}",
         GMX, "mdrun", "-v", "-deffnm", tpr_deffnm,
         "-nb", "gpu", "-update", "cpu", "-gpu_id", "0", "-ntomp", NTOMP,
     ]
