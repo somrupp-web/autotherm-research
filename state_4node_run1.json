@@ -1,0 +1,558 @@
+{
+  "from_cluster": false,
+  "running": false,
+  "current_iter": 89,
+  "total_iters": 101,
+  "best_iter": 48,
+  "baseline_rth": 2.28e-05,
+  "best_rth": 4.278888e-06,
+  "alignment_order": 0.8123,
+  "rth_history": [
+    {
+      "iter": 0,
+      "rth": 2.28e-05,
+      "status": "keep",
+      "desc": "BASELINE \u2014 original low cross-eps (N=30000)"
+    },
+    {
+      "iter": 1,
+      "rth": null,
+      "status": "crash",
+      "desc": "iter-1: Traceback (most recent call last):"
+    },
+    {
+      "iter": 2,
+      "rth": null,
+      "status": "crash",
+      "desc": "iter-2: unknown"
+    },
+    {
+      "iter": 3,
+      "rth": null,
+      "status": "crash",
+      "desc": "iter-3: unknown"
+    },
+    {
+      "iter": 4,
+      "rth": null,
+      "status": "crash",
+      "desc": "iter-4: unknown"
+    },
+    {
+      "iter": 5,
+      "rth": 7.385124e-06,
+      "status": "keep",
+      "desc": "iter-5: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 6,
+      "rth": 5.430299e-06,
+      "status": "keep",
+      "desc": "iter-7: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 7,
+      "rth": 4.790291e-06,
+      "status": "keep",
+      "desc": "iter-8: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 8,
+      "rth": 4.329951e-06,
+      "status": "keep",
+      "desc": "iter-9: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 9,
+      "rth": 4.279358e-06,
+      "status": "keep",
+      "desc": "iter-10: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 10,
+      "rth": 4.548692e-06,
+      "status": "discard",
+      "desc": "iter-11: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 11,
+      "rth": null,
+      "status": "crash",
+      "desc": "iter-13: unknown"
+    },
+    {
+      "iter": 12,
+      "rth": null,
+      "status": "crash",
+      "desc": "iter-14: unknown"
+    },
+    {
+      "iter": 13,
+      "rth": 4.833017e-06,
+      "status": "discard",
+      "desc": "iter-15: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 14,
+      "rth": 5.242888e-06,
+      "status": "discard",
+      "desc": "iter-16: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 15,
+      "rth": 4.324067e-06,
+      "status": "discard",
+      "desc": "iter-17: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 16,
+      "rth": 4.440606e-06,
+      "status": "discard",
+      "desc": "iter-18: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 17,
+      "rth": 4.331944e-06,
+      "status": "discard",
+      "desc": "iter-19: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 18,
+      "rth": 4.482387e-06,
+      "status": "discard",
+      "desc": "iter-20: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 19,
+      "rth": 4.506507e-06,
+      "status": "discard",
+      "desc": "iter-21: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 20,
+      "rth": 4.441665e-06,
+      "status": "discard",
+      "desc": "iter-23: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 21,
+      "rth": 4.341841e-06,
+      "status": "discard",
+      "desc": "iter-24: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 22,
+      "rth": 4.462331e-06,
+      "status": "discard",
+      "desc": "iter-25: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 23,
+      "rth": null,
+      "status": "crash",
+      "desc": "iter-26: unknown"
+    },
+    {
+      "iter": 24,
+      "rth": 4.500736e-06,
+      "status": "discard",
+      "desc": "iter-27: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 25,
+      "rth": 4.406253e-06,
+      "status": "discard",
+      "desc": "iter-28: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 26,
+      "rth": 4.31083e-06,
+      "status": "discard",
+      "desc": "iter-29: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 27,
+      "rth": 4.781054e-06,
+      "status": "discard",
+      "desc": "iter-31: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 28,
+      "rth": 4.888875e-06,
+      "status": "discard",
+      "desc": "iter-32: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 29,
+      "rth": null,
+      "status": "crash",
+      "desc": "iter-33: unknown"
+    },
+    {
+      "iter": 30,
+      "rth": 5.25542e-06,
+      "status": "discard",
+      "desc": "iter-34: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 31,
+      "rth": 4.298296e-06,
+      "status": "discard",
+      "desc": "iter-35: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 32,
+      "rth": 4.407352e-06,
+      "status": "discard",
+      "desc": "iter-36: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 33,
+      "rth": 8.574599e-06,
+      "status": "discard",
+      "desc": "iter-37: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 34,
+      "rth": 4.414299e-06,
+      "status": "discard",
+      "desc": "iter-38: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 35,
+      "rth": 4.388984e-06,
+      "status": "discard",
+      "desc": "iter-39: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 36,
+      "rth": 5.728472e-06,
+      "status": "discard",
+      "desc": "iter-40: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 37,
+      "rth": null,
+      "status": "crash",
+      "desc": "iter-41: unknown"
+    },
+    {
+      "iter": 38,
+      "rth": 4.320556e-06,
+      "status": "discard",
+      "desc": "iter-42: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 39,
+      "rth": 6.02936e-06,
+      "status": "discard",
+      "desc": "iter-43: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 40,
+      "rth": 4.524002e-06,
+      "status": "discard",
+      "desc": "iter-44: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 41,
+      "rth": 5.297186e-06,
+      "status": "discard",
+      "desc": "iter-45: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 42,
+      "rth": 4.848254e-06,
+      "status": "discard",
+      "desc": "iter-46: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 43,
+      "rth": 8.740214e-06,
+      "status": "discard",
+      "desc": "iter-47: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 44,
+      "rth": null,
+      "status": "crash",
+      "desc": "iter-49: unknown"
+    },
+    {
+      "iter": 45,
+      "rth": 4.817713e-06,
+      "status": "discard",
+      "desc": "iter-50: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 46,
+      "rth": 8.683941e-06,
+      "status": "discard",
+      "desc": "iter-51: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 47,
+      "rth": 4.35835e-06,
+      "status": "discard",
+      "desc": "iter-52: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 48,
+      "rth": 4.278888e-06,
+      "status": "keep",
+      "desc": "iter-53: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 49,
+      "rth": 8.544369e-06,
+      "status": "discard",
+      "desc": "iter-54: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 50,
+      "rth": 4.40408e-06,
+      "status": "discard",
+      "desc": "iter-55: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 51,
+      "rth": 4.438331e-06,
+      "status": "discard",
+      "desc": "iter-56: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 52,
+      "rth": 4.816412e-06,
+      "status": "discard",
+      "desc": "iter-57: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 53,
+      "rth": 4.439457e-06,
+      "status": "discard",
+      "desc": "iter-59: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 54,
+      "rth": 4.444925e-06,
+      "status": "discard",
+      "desc": "iter-60: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 55,
+      "rth": null,
+      "status": "crash",
+      "desc": "iter-62: unknown"
+    },
+    {
+      "iter": 56,
+      "rth": 4.395089e-06,
+      "status": "discard",
+      "desc": "iter-63: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 57,
+      "rth": 4.377677e-06,
+      "status": "discard",
+      "desc": "iter-64: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 58,
+      "rth": 8.565108e-06,
+      "status": "discard",
+      "desc": "iter-65: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 59,
+      "rth": 4.417507e-06,
+      "status": "discard",
+      "desc": "iter-67: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 60,
+      "rth": 4.869069e-06,
+      "status": "discard",
+      "desc": "iter-68: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 61,
+      "rth": 8.254977e-06,
+      "status": "discard",
+      "desc": "iter-69: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 62,
+      "rth": 5.556407e-06,
+      "status": "discard",
+      "desc": "iter-70: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 63,
+      "rth": 8.793597e-06,
+      "status": "discard",
+      "desc": "iter-71: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 64,
+      "rth": 4.345851e-06,
+      "status": "discard",
+      "desc": "iter-72: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 65,
+      "rth": 4.41744e-06,
+      "status": "discard",
+      "desc": "iter-74: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 66,
+      "rth": 4.343554e-06,
+      "status": "discard",
+      "desc": "iter-75: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 67,
+      "rth": 8.532286e-06,
+      "status": "discard",
+      "desc": "iter-76: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 68,
+      "rth": 4.321324e-06,
+      "status": "discard",
+      "desc": "iter-77: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 69,
+      "rth": 4.408428e-06,
+      "status": "discard",
+      "desc": "iter-79: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 70,
+      "rth": 4.323021e-06,
+      "status": "discard",
+      "desc": "iter-80: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 71,
+      "rth": 8.410037e-06,
+      "status": "discard",
+      "desc": "iter-81: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 72,
+      "rth": 4.362456e-06,
+      "status": "discard",
+      "desc": "iter-82: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 73,
+      "rth": 4.846566e-06,
+      "status": "discard",
+      "desc": "iter-83: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 74,
+      "rth": 4.437611e-06,
+      "status": "discard",
+      "desc": "iter-84: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 75,
+      "rth": 4.963524e-06,
+      "status": "discard",
+      "desc": "iter-85: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 76,
+      "rth": 4.366712e-06,
+      "status": "discard",
+      "desc": "iter-86: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 77,
+      "rth": 8.419204e-06,
+      "status": "discard",
+      "desc": "iter-87: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 78,
+      "rth": 4.560366e-06,
+      "status": "discard",
+      "desc": "iter-88: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 79,
+      "rth": 8.499917e-06,
+      "status": "discard",
+      "desc": "iter-89: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 80,
+      "rth": null,
+      "status": "crash",
+      "desc": "iter-90: unknown"
+    },
+    {
+      "iter": 81,
+      "rth": 4.401223e-06,
+      "status": "discard",
+      "desc": "iter-91: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 82,
+      "rth": 4.394714e-06,
+      "status": "discard",
+      "desc": "iter-92: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 83,
+      "rth": 4.414789e-06,
+      "status": "discard",
+      "desc": "iter-94: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 84,
+      "rth": 4.868457e-06,
+      "status": "discard",
+      "desc": "iter-95: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 85,
+      "rth": 8.568798e-06,
+      "status": "discard",
+      "desc": "iter-96: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 86,
+      "rth": 4.445614e-06,
+      "status": "discard",
+      "desc": "iter-97: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 87,
+      "rth": 4.847159e-06,
+      "status": "discard",
+      "desc": "iter-98: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 88,
+      "rth": 4.431791e-06,
+      "status": "discard",
+      "desc": "iter-99: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    },
+    {
+      "iter": 89,
+      "rth": 8.830495e-06,
+      "status": "discard",
+      "desc": "iter-100: structure.py \u2014 Thermal Interface Material (TIM) composition."
+    }
+  ],
+  "nanotube_geometry_best": null,
+  "nanotube_geometry_baseline": null,
+  "gpu_telemetry": [],
+  "_snapshot_tag": "4node_run1",
+  "_note": "4-node DGX Spark cluster run, N=30000, 100 iterations, best R_th=4.278e-6",
+  "_git_log": "12fc343 manufacturing_report: thermal_resistance=4.278888E-06\ncb6fd35 iter-53: structure.py \u2014 Thermal Interface Material (TIM) composition.\n8387c17 iter-10: structure.py \u2014 Thermal Interface Material (TIM) composition."
+}

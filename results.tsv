@@ -1,1 +1,73 @@
 commit	thermal_resistance	sim_time_s	status	description
+6d9af2a	N/A	N/A	crash	iter-1: unknown
+57c67dd	N/A	N/A	crash	iter-2: unknown
+311805a	N/A	N/A	crash	iter-3: unknown
+df64d4b	N/A	N/A	crash	iter-4: unknown
+bb0a703	N/A	N/A	crash	iter-5: unknown
+bb457dc	N/A	N/A	crash	iter-6: unknown
+6f35229	N/A	N/A	crash	iter-7: unknown
+2b15022	N/A	N/A	crash	iter-8: unknown
+ffde0e1	N/A	N/A	crash	iter-9: unknown
+950769f	N/A	N/A	crash	iter-10: unknown
+a5f94d8	N/A	N/A	crash	iter-11: unknown
+a91c30c	N/A	N/A	crash	iter-12: unknown
+6855e98	N/A	N/A	crash	iter-13: unknown
+a511219	N/A	N/A	crash	iter-14: unknown
+72021ac	N/A	N/A	crash	iter-15: unknown
+9a0dfa3	N/A	N/A	crash	iter-16: unknown
+60ef412	N/A	N/A	crash	iter-17: unknown
+d700a41	N/A	N/A	crash	iter-18: unknown
+ef5b2c7	N/A	N/A	crash	iter-19: unknown
+990ad9a	N/A	N/A	crash	iter-20: unknown
+7c56a93	N/A	N/A	crash	iter-21: unknown
+ac4a7e7	N/A	N/A	crash	iter-22: unknown
+74b0501	N/A	N/A	crash	iter-24: unknown
+b668113	N/A	N/A	crash	iter-25: unknown
+91699a9	N/A	N/A	crash	iter-26: unknown
+8498642	3.658920E-06	633.3	keep	iter-27: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+efeb9d0	7.494998E-06	660.1	discard	iter-28: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+d026a9b	N/A	N/A	crash	iter-29: Traceback (most recent call last):
+3954b79	5.289202E-06	688.4	discard	iter-30: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+6d42e7a	N/A	N/A	crash	iter-31: Traceback (most recent call last):
+0032011	4.479261E-06	649.8	discard	iter-32: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+3d88794	N/A	N/A	crash	iter-34: Traceback (most recent call last):
+fc99dca	N/A	N/A	crash	iter-35: Traceback (most recent call last):
+0469a0c	3.667128E-06	782.8	discard	iter-36: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+dd939b7	3.809849E-06	804.4	discard	iter-37: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+edad1b9	N/A	N/A	crash	iter-40: unknown
+3b15d78	N/A	N/A	crash	iter-41: unknown
+a2f31ac	4.704839E-06	608.5	discard	iter-43: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+8e6a1d5	4.171114E-06	1152.1	discard	iter-44: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+11db115	3.256186E-06	1197.9	keep	iter-46: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+d6efcc1	4.961721E-06	933.0	discard	iter-47: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+2367b83	4.464911E-06	1189.5	discard	iter-48: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+b5b05ae	4.960923E-06	763.1	discard	iter-49: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+d6d8b19	4.359574E-06	788.7	discard	iter-50: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+8fa324c	5.687194E-06	1183.1	discard	iter-52: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+990f51d	4.731079E-06	1166.1	discard	iter-53: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+fe54c2e	4.118247E-06	838.0	discard	iter-55: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+b9c9ca6	3.301961E-06	1102.1	discard	iter-56: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+d4e4619	5.032618E-06	808.2	discard	iter-57: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+e67edda	5.141235E-06	861.7	discard	iter-64: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+9e3169b	4.398123E-06	927.7	discard	iter-66: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+3f74747	8.867007E-06	803.8	discard	iter-68: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+22d6806	4.049423E-06	954.3	discard	iter-69: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+ad5bb84	3.916681E-06	719.9	discard	iter-70: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+a7f9067	5.280286E-06	765.0	discard	iter-71: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+87c7519	4.723102E-06	872.6	discard	iter-72: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+dbcc23b	4.021986E-06	775.2	discard	iter-73: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+5764d22	5.790705E-06	790.5	discard	iter-74: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+317ab6d	3.648673E-06	942.2	discard	iter-76: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+3421cba	4.367938E-06	1127.6	discard	iter-78: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+050c680	4.839450E-06	765.7	discard	iter-80: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+235181b	4.239466E-06	816.7	discard	iter-81: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+1f0f1c0	3.869385E-06	765.8	discard	iter-82: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+2168648	3.810450E-06	1088.6	discard	iter-84: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+649b5fc	4.386241E-06	1144.3	discard	iter-85: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+8619eff	3.447585E-06	1171.2	discard	iter-87: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+a2c3c83	3.863496E-06	1020.1	discard	iter-88: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+33053aa	3.874442E-06	867.9	discard	iter-89: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+52eb271	4.910193E-06	824.4	discard	iter-90: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+88e0afb	4.842514E-06	770.0	discard	iter-91: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+8e9a5f4	4.851500E-06	973.9	discard	iter-93: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────
+831ae17	4.493650E-06	789.0	discard	iter-95: ── Composition (must sum to 1.0, each >= 0.02) ───────────────────────────────

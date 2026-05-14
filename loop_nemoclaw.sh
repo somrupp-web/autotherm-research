@@ -123,8 +123,15 @@ fi
 for iter in $(seq 1 "$MAX_ITER"); do
     log "══════ Iteration $iter / $MAX_ITER ══════"
 
-    cp "$REPO_DIR/structure.py.baseline" structure.py
-    log "Reset structure.py to baseline."
+    BEST_COMMIT=$(awk -F'\t' '$4=="keep"{print $1}' results.tsv 2>/dev/null | tail -1)
+    if [ -n "$BEST_COMMIT" ]; then
+        git show ${BEST_COMMIT}:structure.py > structure.py 2>/dev/null \
+            || cp "$REPO_DIR/structure.py.baseline" structure.py
+        log "Reset structure.py to best known commit (${BEST_COMMIT})."
+    else
+        cp "$REPO_DIR/structure.py.baseline" structure.py
+        log "Reset structure.py to baseline (no best yet)."
+    fi
 
     BEST_R=$(awk -F'\t' '$4 == "keep" {print $2}' results.tsv 2>/dev/null \
              | sort -g | head -1)
@@ -132,67 +139,18 @@ for iter in $(seq 1 "$MAX_ITER"); do
     TRIED=$(awk -F'\t' '$4 == "keep" || $4 == "discard"' results.tsv 2>/dev/null | wc -l || echo 0)
     log "Best thermal_resistance=$BEST_R  |  Total experiments=$TRIED"
 
-    # ── Upload into NemoClaw sandbox workspace ────────────────────────────────
-    log "Uploading files to sandbox..."
-    sbox_upload "${SANDBOX_WORK}/structure.py" < structure.py \
-        || { log "ERROR: upload structure.py failed"; continue; }
-    sbox_upload "${SANDBOX_WORK}/results.tsv"  < results.tsv \
-        || { log "ERROR: upload results.tsv failed"; continue; }
-    sbox_upload "${SANDBOX_WORK}/program.md"   < "$REPO_DIR/program.md" \
-        || { log "ERROR: upload program.md failed"; continue; }
-
-    # ── Build prompt (sandbox paths only — agent cannot reference host paths) ─
-    PROMPT="You are an AI research agent on a single NVIDIA DGX Spark.
-
-You are a Computational Materials Scientist optimizing a Thermal Interface Material (TIM).
-Current best thermal_resistance = ${BEST_R} m²K/W. LOWER is BETTER.
-
-Steps you MUST follow:
-1. Read ${SANDBOX_WORK}/structure.py
-2. Read ${SANDBOX_WORK}/results.tsv
-3. Read ${SANDBOX_WORK}/program.md
-4. Choose ONE specific change to structure.py that has not been tried yet.
-5. Write the complete new structure.py using the bash tool:
-   cat > ${SANDBOX_WORK}/structure.py << 'PYEOF'
-   [complete new python file]
-   PYEOF
-6. Stop. Do NOT run simulations. Do NOT modify any file other than ${SANDBOX_WORK}/structure.py.
-
-IMPORTANT: COMPOSITION values must sum to exactly 1.0.
-
-CRITICAL — YOU MUST CHANGE AT LEAST ONE VALUE:
-The baseline structure.py has CROSS_INTERACTIONS epsilon = 7.0 / 6.0 / 5.0 (metal-filler / metal-binder / filler-binder).
-That exact combination was already simulated and gave R_th = ${BEST_R} m²K/W.
-Writing back the same values is FORBIDDEN and wastes an iteration.
-You MUST increase at least one cross-interaction epsilon. Minimum next step:
-  metal-filler epsilon = 7.5, metal-binder epsilon = 7.0, filler-binder epsilon = 6.5
-After that try: 8.0 / 7.5 / 7.0, then 8.0 / 8.0 / 8.0 (the ceiling).
-Also explore: filler fraction 0.30-0.35, individual LJ epsilons metal=6.0 filler=5.0."
-
-    # ── Run NemoClaw agent (base64-encoded to prevent shell injection) ─────────
-    log "Running NemoClaw agent (iter $iter)..."
-    PROMPT_B64=$(printf '%s' "$PROMPT" | base64 -w0)
-    SESSION_ID="autotherm-iter-${iter}"
-
-    AGENT_OUT=$(sbox "printf '%s' '${PROMPT_B64}' | base64 -d > /tmp/prompt.txt && \
-        ${OPENCLAW_ENV} ${OPENCLAW} agent --agent main \
-            --session-id '${SESSION_ID}' \
-            --message \"\$(cat /tmp/prompt.txt)\" \
-            --json --timeout 600" 2>&1)
+    # ── Run call_nemotron.py for LLM optimization (direct vLLM, proven reliable) ─
+    log "Running call_nemotron agent (iter $iter)..."
+    python3 "$REPO_DIR/call_nemotron.py" "$REPO_DIR" "$BEST_R" "$TRIED" \
+        2> >(while IFS= read -r line; do log "$line"; done)
     AGENT_EXIT=$?
-
     if [ $AGENT_EXIT -ne 0 ]; then
-        log "WARNING: NemoClaw agent exited $AGENT_EXIT — skipping."
-        log "Last output: $(echo "$AGENT_OUT" | grep -v '^$' | tail -3)"
-        cp "$REPO_DIR/structure.py.baseline" structure.py
+        log "WARNING: call_nemotron agent failed (exit=$AGENT_EXIT) — skipping."
         continue
     fi
 
-    # ── Download modified structure.py from sandbox ───────────────────────────
-    log "Downloading structure.py from sandbox..."
-    sbox "cat ${SANDBOX_WORK}/structure.py" > structure.py \
-        || { log "ERROR: download failed"; cp "$REPO_DIR/structure.py.baseline" structure.py; continue; }
-
+    sed -i 's/^N_TOTAL = .*/N_TOTAL = 500000/' structure.py
+    sed -i 's/^SIM_TIME_PS = .*/SIM_TIME_PS = 50/' structure.py  # SIM_TIME_PS locked at 50ps  # N_TOTAL locked at 500000
     # ── Validate ──────────────────────────────────────────────────────────────
     if ! $PYTHON -m py_compile structure.py 2>/tmp/syntax_err.txt; then
         log "WARNING: syntax error in structure.py — skipping."

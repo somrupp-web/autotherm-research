@@ -21,15 +21,51 @@ import paramiko
 # ── Serve viewer.html via mini HTTP server on port 7863 ───────────────────────
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
+# ── Cluster scaling image (base64 embedded) ───────────────────────────────────
+import base64 as _b64
+_CLUSTER_SCALING_IMG = ""
+_img_path = os.path.join(_HERE, "cluster_scaling.jpeg")
+if os.path.exists(_img_path):
+    with open(_img_path, "rb") as _f:
+        _CLUSTER_SCALING_IMG = _b64.b64encode(_f.read()).decode()
+
 # ── Cluster config (node0 runs loop.sh + vLLM) ────────────────────────────────
 CLUSTER_HOST = os.getenv("CLUSTER_HOST", "10.137.203.228")
 CLUSTER_USER = "nvidia"
 CLUSTER_PASS = "nvidia"
-CLUSTER_REPO = "/home/nvidia/autotherm"
+CLUSTER_REPO = "/home/nvidia/autotherm"       # default; overridden by _ui_cluster_repo
 BASELINE_RTH  = 2.28e-5
 
 _state_cache = {"data": None, "ts": 0.0}
 _state_lock  = threading.Lock()
+
+# ── UI-controlled data source ─────────────────────────────────────────────────
+_ui_lock        = threading.Lock()
+_ui_mode        = "live"          # "live" | "saved"
+_ui_cluster_ip  = CLUSTER_HOST    # editable via UI
+_ui_saved_file  = None            # absolute path to selected state_*.json
+
+_UNSET = object()  # sentinel so None can mean "clear"
+
+_ui_cluster_repo = CLUSTER_REPO   # which experiment dir to read on the cluster
+
+def _set_ui_mode(mode, ip=None, saved_path=_UNSET, repo=None):
+    global _ui_mode, _ui_cluster_ip, _ui_saved_file, _ui_cluster_repo
+    with _ui_lock:
+        _ui_mode = mode
+        if ip:                       _ui_cluster_ip   = ip.strip()
+        if repo:                     _ui_cluster_repo = repo.strip()
+        if saved_path is not _UNSET: _ui_saved_file   = saved_path
+
+def _list_saved_runs():
+    """Return list of (label, path) for all state_*.json files in _HERE."""
+    import glob as _glob
+    files = sorted(_glob.glob(os.path.join(_HERE, "state_*.json")))
+    results = []
+    for p in files:
+        label = os.path.basename(p).replace("state_", "").replace(".json", "").replace("_", " ")
+        results.append((label, p))
+    return results
 
 # ── Real-time GPU telemetry from compute nodes ────────────────────────────────
 COMPUTE_NODES_GPU = [
@@ -84,13 +120,16 @@ def _ssh_read(client, path):
 
 def _fetch_cluster_data():
     """Fetch results.tsv + nanotube geometry JSONs from cluster node0."""
+    with _ui_lock:
+        host = _ui_cluster_ip
+        repo = _ui_cluster_repo
     try:
         c = paramiko.SSHClient()
         c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        c.connect(CLUSTER_HOST, username=CLUSTER_USER, password=CLUSTER_PASS, timeout=5)
-        results   = _ssh_read(c, f"{CLUSTER_REPO}/results.tsv")
-        geom_best = _ssh_read(c, f"{CLUSTER_REPO}/nanotube_geometry_best.json")
-        geom_base = _ssh_read(c, f"{CLUSTER_REPO}/nanotube_geometry_baseline.json")
+        c.connect(host, username=CLUSTER_USER, password=CLUSTER_PASS, timeout=5)
+        results   = _ssh_read(c, f"{repo}/results.tsv")
+        geom_best = _ssh_read(c, f"{repo}/nanotube_geometry_best.json")
+        geom_base = _ssh_read(c, f"{repo}/nanotube_geometry_baseline.json")
         c.close()
         return results, geom_best, geom_base, True
     except Exception:
@@ -172,7 +211,12 @@ def _build_state():
     }
 
 def get_state():
-    """Return cached state immediately — never blocks."""
+    """Return cached state — checks UI mode first, then falls back to live cluster cache."""
+    with _ui_lock:
+        mode, saved = _ui_mode, _ui_saved_file
+    if mode == "saved" and saved and os.path.exists(saved):
+        with open(saved, encoding="utf-8") as f:
+            return json.load(f)
     with _state_lock:
         return _state_cache["data"] or {"current_iter": 0, "rth_history": [], "running": False}
 
@@ -197,6 +241,22 @@ class _SilentHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith("/state.json"):
             data = json.dumps(get_state()).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(data)
+        elif self.path.startswith("/debug.json"):
+            with _ui_lock:
+                info = {"ui_mode": _ui_mode, "ui_cluster_ip": _ui_cluster_ip,
+                        "ui_saved_file": _ui_saved_file}
+            with _state_lock:
+                info["cache_is_none"] = _state_cache["data"] is None
+                if _state_cache["data"]:
+                    info["cache_from_cluster"] = _state_cache["data"].get("from_cluster")
+                    info["cache_current_iter"] = _state_cache["data"].get("current_iter")
+            data = json.dumps(info, indent=2).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(data)))
@@ -908,6 +968,8 @@ body {
     padding:0 !important;
     overflow:hidden;
 }
+.tab-nav, .tab-nav * { overflow:visible !important; }
+.tabs > div:first-child { overflow-x:auto !important; }
 /* Kill Gradio's default centering / max-width cap */
 .contain { max-width:100% !important; }
 .app { max-width:100% !important; padding:0 !important; }
@@ -934,6 +996,26 @@ label span, .label-wrap { color:#6090B8 !important; font-family:monospace !impor
     font-size:12px !important; }
 input[type=range] { accent-color:#00D8FF; }
 footer, .built-with { display:none !important; }
+/* Connect screen — bigger fonts for radio, textbox, buttons */
+#connect_screen .wrap { gap:16px !important; }
+#connect_screen input[type=text], #connect_screen input[type=email] {
+    font-size:18px !important; font-weight:600 !important;
+    height:52px !important; padding:0 14px !important;
+}
+#connect_screen button {
+    font-size:18px !important; font-weight:700 !important;
+    min-height:52px !important;
+}
+#connect_screen .gradio-radio label span {
+    font-size:20px !important; font-weight:700 !important;
+    color:#D8EEFF !important;
+}
+#connect_screen .gradio-radio input[type=radio] {
+    width:20px !important; height:20px !important;
+}
+#connect_screen select, #connect_screen .gradio-dropdown {
+    font-size:18px !important; font-weight:600 !important;
+}
 """
 
 VIEWER_CSS = CSS + """
@@ -956,6 +1038,20 @@ VIEWER_CSS = CSS + """
     border:none !important;
     display:block;
 }
+/* Cluster scaling overlay screen */
+#cluster_scaling_screen { background:#05101C !important; }
+#cluster_close_row { padding:6px 12px !important; align-items:center !important; }
+#cluster_close_row button {
+    background:#1A0808 !important; color:#FF6060 !important;
+    border:1px solid #FF3A3A !important; font-family:monospace !important;
+    font-weight:bold !important; min-height:36px !important;
+}
+/* Cluster Scaling button in topbar */
+#cluster_scale_btn button {
+    background:#0B2040 !important; color:#00D8FF !important;
+    border:1px solid #1E4060 !important; font-family:monospace !important;
+    font-weight:bold !important;
+}
 """
 
 VIEWER_HTML = """
@@ -966,27 +1062,252 @@ VIEWER_HTML = """
 </iframe>
 """
 
+def _saved_run_labels():
+    return [label for label, _ in _list_saved_runs()] or ["(no saved runs found)"]
+
+_REPO_MAP = {
+    "1-node run  (currently running)": "/home/nvidia/autotherm_1node",
+    "4-node run  (finished, 89 iters)": "/home/nvidia/autotherm",
+}
+
+def _connect_live(ip, repo_choice):
+    ip = (ip or "").strip()
+    if not ip:
+        return "<span style='color:#FF3A3A;font-family:monospace'>⚠ Enter a cluster IP first</span>"
+    repo = _REPO_MAP.get(repo_choice, "/home/nvidia/autotherm_1node")
+    try:
+        c = paramiko.SSHClient()
+        c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        c.connect(ip, username=CLUSTER_USER, password=CLUSTER_PASS, timeout=6)
+        _, out, _ = c.exec_command(f"hostname && ls {repo}/results.tsv 2>/dev/null && echo OK")
+        info = out.read().decode("utf-8", errors="replace").strip()
+        c.close()
+        _set_ui_mode("live", ip=ip, repo=repo)
+        short = repo.split("/")[-1]
+        return (f"<span style='color:#00FF88;font-family:monospace'>"
+                f"✔ Connected to {ip} ({short})"
+                + (f" — {info.splitlines()[0]}" if info else "") +
+                f"</span>")
+    except Exception as e:
+        return f"<span style='color:#FF3A3A;font-family:monospace'>✘ {ip}: {e}</span>"
+
+def _preview_saved(label):
+    """Show info about a saved run WITHOUT setting the mode — just for the dropdown preview."""
+    runs = {lbl: path for lbl, path in _list_saved_runs()}
+    path = runs.get(label)
+    if not path:
+        return "<span style='color:#FF3A3A;font-family:monospace'>⚠ Run not found</span>"
+    try:
+        with open(path, encoding="utf-8") as f:
+            s = json.load(f)
+        note = s.get("_note", "")
+        best = s.get("best_rth", "?")
+        niters = s.get("current_iter", "?")
+        return (f"<span style='color:#00D8FF;font-family:monospace'>"
+                f"{niters} iterations · best R_th = {float(best):.3e} m²K/W"
+                + (f"<br>{note}" if note else "") +
+                f"</span>")
+    except Exception as e:
+        return f"<span style='color:#FF3A3A;font-family:monospace'>⚠ {e}</span>"
+
+def _load_saved(label):
+    """Actually commit to saved mode — only called when Load button is clicked."""
+    runs = {lbl: path for lbl, path in _list_saved_runs()}
+    path = runs.get(label)
+    if not path:
+        return "<span style='color:#FF3A3A;font-family:monospace'>⚠ Run not found</span>"
+    _set_ui_mode("saved", saved_path=path)
+    return _preview_saved(label).replace("font-family:monospace'>",
+                                         "font-family:monospace'>✔ Loaded: " + label + "<br>")
+
+CONNECT_HTML = """
+<div style="text-align:center; padding:56px 0 36px; font-family:monospace;">
+  <div style="color:#00D8FF; font-size:42px; font-weight:900; margin-bottom:10px; letter-spacing:3px;">
+    AutoTherm TIM Optimizer
+  </div>
+  <div style="color:#6090B8; font-size:18px; font-weight:600;">
+    AI-driven Thermal Interface Material research on DGX Spark
+  </div>
+</div>
+"""
+
 with gr.Blocks(title="AutoTherm TIM Optimizer") as demo:
-    with gr.Tabs():
-        # ── Tab 1: Movie-quality 3D viewer ────────────────────────────────────
-        with gr.Tab("3D Viewer  (WebGL)"):
-            gr.HTML(VIEWER_HTML, elem_id="viewer3d")
 
-        # ── Tab 2: Analytics dashboard (matplotlib) ───────────────────────────
-        with gr.Tab("Analytics Dashboard"):
-            img_out = gr.Image(label="", show_label=False, height=None, elem_id="img_out")
-            status  = gr.HTML(
-                "<span style='font-family:monospace;color:#2A4060'>"
-                "Press ▶ Start to animate all 100 iterations, or drag the slider to jump</span>")
-            with gr.Row(elem_id="ctrl"):
-                start_btn = gr.Button("▶  Start Animation  (100 iterations)", variant="primary", scale=3)
-                pause_sl  = gr.Slider(1,10,value=5,step=0.5,label="Pause per frame (s)",scale=2)
-                iter_sl   = gr.Slider(0,99,value=0,step=1,label="Jump to iteration",scale=3)
-                jump_btn  = gr.Button("Go", elem_classes=["secondary"], scale=1)
+    # ── Screen 1: Connection / source selection ────────────────────────────────
+    with gr.Column(visible=True, elem_id="connect_screen") as connect_screen:
+        gr.HTML(CONNECT_HTML)
 
-            start_btn.click(animate,  inputs=[pause_sl], outputs=[img_out,status])
-            jump_btn.click( jump_to,  inputs=[iter_sl],  outputs=[img_out,status])
-            iter_sl.release(jump_to,  inputs=[iter_sl],  outputs=[img_out,status])
+        with gr.Column(elem_id="connect_card"):
+            gr.HTML("<div style='color:#D8EEFF;font-size:22px;font-weight:800;"
+                    "margin-bottom:20px;letter-spacing:1px;'>Select Data Source</div>")
+
+            mode_radio = gr.Radio(
+                choices=["Live Cluster", "Saved Run"],
+                value="Live Cluster",
+                label="",
+                interactive=True,
+                elem_id="mode_radio",
+            )
+
+            # Live cluster inputs
+            with gr.Column(visible=True, elem_id="live_inputs") as live_inputs:
+                gr.HTML("<div style='color:#6090B8;font-size:16px;font-weight:600;margin:12px 0 6px;'>"
+                        "Cluster node IP:</div>")
+                with gr.Row():
+                    ip_input = gr.Textbox(
+                        value=CLUSTER_HOST,
+                        label="",
+                        placeholder="e.g. 10.137.203.228",
+                        scale=5,
+                        container=False,
+                    )
+                    connect_btn = gr.Button("Connect", variant="primary", scale=2)
+                gr.HTML("<div style='color:#6090B8;font-size:16px;font-weight:600;margin:12px 0 6px;'>"
+                        "Experiment to monitor:</div>")
+                repo_radio = gr.Radio(
+                    choices=["1-node run  (currently running)",
+                             "4-node run  (finished, 89 iters)"],
+                    value="1-node run  (currently running)",
+                    label="",
+                    interactive=True,
+                )
+                conn_status = gr.HTML(
+                    "<span style='color:#2A4060;font-size:15px;font-weight:600;'>Enter IP and click Connect</span>")
+
+            # Saved run inputs
+            with gr.Column(visible=False, elem_id="saved_inputs") as saved_inputs:
+                gr.HTML("<div style='color:#6090B8;font-size:16px;font-weight:600;margin:12px 0 6px;'>"
+                        "Choose a saved run snapshot:</div>")
+                saved_dd = gr.Dropdown(
+                    choices=_saved_run_labels(),
+                    label="",
+                    interactive=True,
+                    container=False,
+                )
+                saved_status = gr.HTML(
+                    "<span style='color:#2A4060;font-size:15px;font-weight:600;'>Select a run above</span>")
+                load_btn = gr.Button("Load Saved Run", variant="primary")
+
+    # ── Screen 2: Main dashboard ───────────────────────────────────────────────
+    with gr.Column(visible=False) as dashboard_screen:
+        # Back button strip
+        with gr.Row(elem_id="topbar"):
+            src_label = gr.HTML(
+                "<span style='font-family:monospace;color:#6090B8;font-size:14px;font-weight:700;"
+                "padding:6px 12px;'>Source: —</span>")
+            cluster_scale_btn = gr.Button("Cluster Scaling", scale=0, size="sm",
+                                          elem_id="cluster_scale_btn")
+            back_btn = gr.Button("Change Source", scale=0, size="sm",
+                                 elem_classes=["secondary"])
+
+        with gr.Tabs():
+            with gr.Tab("3D Viewer  (WebGL)"):
+                gr.HTML(VIEWER_HTML, elem_id="viewer3d")
+
+            with gr.Tab("Analytics Dashboard"):
+                img_out = gr.Image(label="", show_label=False, height=None, elem_id="img_out")
+                status  = gr.HTML(
+                    "<span style='font-family:monospace;color:#2A4060'>"
+                    "Press Start to animate all iterations, or drag the slider to jump</span>")
+                with gr.Row(elem_id="ctrl"):
+                    start_btn = gr.Button("Start Animation", variant="primary", scale=3)
+                    pause_sl  = gr.Slider(1,10,value=5,step=0.5,label="Pause per frame (s)",scale=2)
+                    iter_sl   = gr.Slider(0,99,value=0,step=1,label="Jump to iteration",scale=3)
+                    jump_btn  = gr.Button("Go", elem_classes=["secondary"], scale=1)
+
+                start_btn.click(animate,  inputs=[pause_sl], outputs=[img_out,status])
+                jump_btn.click( jump_to,  inputs=[iter_sl],  outputs=[img_out,status])
+                iter_sl.release(jump_to,  inputs=[iter_sl],  outputs=[img_out,status])
+
+    # ── Screen 3: Cluster Scaling image overlay ───────────────────────────────
+    with gr.Column(visible=False, elem_id="cluster_scaling_screen") as cluster_screen:
+        with gr.Row(elem_id="cluster_close_row"):
+            gr.HTML("<span style='font-family:monospace;color:#00D8FF;font-size:16px;"
+                    "font-weight:bold;padding:6px 0;'>"
+                    "4-Node DGX Spark (GB10) Cluster: Enabling Production-Scale GROMACS for TIMs"
+                    "</span>")
+            cluster_close_btn = gr.Button("✕  Cancel", scale=0, size="sm",
+                                          elem_id="cluster_close_row")
+        gr.HTML(f"""
+        <div style="width:100%;text-align:center;padding:4px 16px 16px;background:#05101C;">
+          <img src="data:image/jpeg;base64,{_CLUSTER_SCALING_IMG}"
+               style="max-width:99%;max-height:calc(100vh - 80px);
+                      object-fit:contain;border:2px solid #1E4060;
+                      border-radius:8px;display:inline-block;">
+        </div>
+        """)
+
+    # ── Callbacks ──────────────────────────────────────────────────────────────
+    def _switch_mode(choice):
+        if choice == "Live Cluster":
+            # Clear saved file so get_state() can't accidentally return saved data
+            _set_ui_mode("live", saved_path=None)
+            return gr.update(visible=True), gr.update(visible=False)
+        else:
+            return gr.update(visible=False), gr.update(visible=True)
+
+    mode_radio.change(_switch_mode, inputs=[mode_radio],
+                      outputs=[live_inputs, saved_inputs])
+
+    def _do_connect(ip, repo_choice):
+        msg = _connect_live(ip, repo_choice)
+        if "Connected" in msg:
+            max_it = max(1, get_state().get('total_iters', 100) - 1)
+            short = _REPO_MAP.get(repo_choice, repo_choice).split("/")[-1]
+            label = (
+                "<span style='font-family:monospace;font-size:14px;font-weight:700;"
+                "padding:4px 12px;border-radius:4px;"
+                "background:#003A18;color:#00FF88;border:1px solid #00CC66;'>"
+                f"&#9679; LIVE &nbsp;—&nbsp; {ip.strip()} / {short}"
+                "</span>"
+            )
+            return (msg,
+                    gr.update(visible=False),
+                    gr.update(visible=True),
+                    gr.update(value=label),
+                    gr.update(maximum=max_it))
+        return msg, gr.update(), gr.update(), gr.update(), gr.update()
+
+    connect_btn.click(_do_connect, inputs=[ip_input, repo_radio],
+                      outputs=[conn_status, connect_screen, dashboard_screen, src_label, iter_sl])
+
+    def _do_load(label):
+        return _preview_saved(label)
+
+    saved_dd.change(_do_load, inputs=[saved_dd], outputs=[saved_status])
+
+    def _launch_saved(label):
+        msg = _load_saved(label)
+        if "Loaded" in msg:
+            max_it = max(1, get_state().get('total_iters', 100) - 1)
+            disp = label if label else "Saved Run"
+            lbl = (
+                "<span style='font-family:monospace;font-size:14px;font-weight:700;"
+                "padding:4px 12px;border-radius:4px;"
+                "background:#2A1500;color:#FFA040;border:1px solid #CC6600;'>"
+                f"&#128190; SAVED &nbsp;—&nbsp; {disp}"
+                "</span>"
+            )
+            return (msg,
+                    gr.update(visible=False),
+                    gr.update(visible=True),
+                    gr.update(value=lbl),
+                    gr.update(maximum=max_it))
+        return msg, gr.update(), gr.update(), gr.update(), gr.update()
+
+    load_btn.click(_launch_saved, inputs=[saved_dd],
+                   outputs=[saved_status, connect_screen, dashboard_screen, src_label, iter_sl])
+
+    back_btn.click(lambda: (gr.update(visible=True), gr.update(visible=False)),
+                   outputs=[connect_screen, dashboard_screen])
+
+    cluster_scale_btn.click(
+        lambda: (gr.update(visible=False), gr.update(visible=True)),
+        outputs=[dashboard_screen, cluster_screen])
+
+    cluster_close_btn.click(
+        lambda: (gr.update(visible=True), gr.update(visible=False)),
+        outputs=[dashboard_screen, cluster_screen])
 
     def _init_slider():
         max_it = max(1, get_state().get('total_iters', 100) - 1)

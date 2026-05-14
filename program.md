@@ -125,6 +125,20 @@ composition (not for routine search iterations).
 
 ---
 
+## CRITICAL — Infrastructure crashes vs bad parameters
+
+When `results.tsv` shows `crash` for an iteration, this is **almost always** a GROMACS
+infrastructure failure (MPI node crash, timeout) — **not** a sign that your parameters
+were wrong. Do NOT assume a parameter change caused a crash. Continue pushing the same
+direction you were going.
+
+### SIM_TIME_PS constraint for large systems
+**With N_TOTAL=30000, SIM_TIME_PS=200 causes a TIMEOUT crash every time.**
+ALWAYS set SIM_TIME_PS=100 when N_TOTAL >= 20000. The simulation budget is 360 seconds.
+At N=30000, 100ps fits comfortably; 200ps does NOT.
+
+---
+
 ## Results so far
 Check `results.tsv` before every iteration. Each row:
 ```

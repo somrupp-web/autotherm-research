@@ -1,6 +1,6 @@
 """
 prepare.py — GROMACS simulation runner and thermal resistance extractor.
-DO NOT MODIFY. Qwen only modifies structure.py.
+DO NOT MODIFY. Nemotron only modifies structure.py.
 
 Workflow:
   1. Import structure.py parameters (composition, LJ params, etc.)
@@ -35,7 +35,7 @@ SIM_TIME_PS = float(_s.SIM_TIME_PS)
 GMX      = shutil.which("gmx_mpi") or "/usr/local/gromacs/bin/gmx_mpi"
 MPIRUN   = shutil.which("mpirun") or "mpirun"
 NTOMP    = str(os.cpu_count() or 20)
-SIM_BUDGET_S = 360   # hard wall: kill mdrun if it exceeds this
+SIM_BUDGET_S = 36000   # hard wall: kill mdrun if it exceeds this
 
 # ── Multi-node MPI + NCCL config ─────────────────────────────────────────────
 HOSTFILE     = "/home/nvidia/autotherm/hostfile_gromacs"  # nodes 1-3 only; node0 reserved for vLLM
@@ -119,7 +119,7 @@ for pair, p in CROSS.items():
     _check(p['sigma'],   0.20, 0.60, f"CROSS_INTERACTIONS[{pair}][sigma]")
     _check(p['epsilon'], 0.50, 8.00, f"CROSS_INTERACTIONS[{pair}][epsilon]")
 _check(TEMPERATURE, 280, 480, "TEMPERATURE")
-_check(N_TOTAL,     500, 40000, "N_TOTAL")
+_check(N_TOTAL,     500, 50000000, "N_TOTAL")
 _check(SIM_TIME_PS, 50,  400,  "SIM_TIME_PS")
 
 print(f"[prepare] Validated. N={N_TOTAL}, T={TEMPERATURE}K, t={SIM_TIME_PS}ps", flush=True)
@@ -225,7 +225,7 @@ def _write_gro(path):
             x  = (ix + 0.5) * spacing
             y  = (iy + 0.5) * spacing
             z  = (iz + 0.5) * spacing
-            f.write(f"{idx+1:5d}{_RESNAMES[c]:<5}{_SHORT[c]:<5}{idx+1:5d}"
+            f.write(f"{(idx+1)%100000:5d}{_RESNAMES[c]:<5}{_SHORT[c]:<5}{(idx+1)%100000:5d}"
                     f"{x:8.3f}{y:8.3f}{z:8.3f}\n")
         f.write(f"   {BOX_L:.5f}   {BOX_L:.5f}   {BOX_L:.5f}\n")
 
@@ -243,19 +243,19 @@ def _write_ndx(path):
         for name, indices in groups.items():
             f.write(f"[ {name} ]\n")
             for i, idx in enumerate(indices):
-                f.write(f"{idx:6d}")
+                f.write(f"{idx:7d}")
                 if (i + 1) % 15 == 0:
                     f.write('\n')
             f.write('\n')
         f.write("[ System ]\n")
         for i, idx in enumerate(all_atoms):
-            f.write(f"{idx:6d}")
+            f.write(f"{idx:7d}")
             if (i + 1) % 15 == 0:
                 f.write('\n')
         f.write('\n')
 
 
-def _write_mdp(path, mode, nsteps, energygrps=False, save_xtc=False):
+def _write_mdp(path, mode, nsteps, energygrps=False, save_xtc=False, dt=0.002, annealing_start=None):
     """Write GROMACS MDP parameter file.
 
     energygrps=False → GPU-compatible (no per-group energy decomposition).
@@ -269,7 +269,7 @@ def _write_mdp(path, mode, nsteps, energygrps=False, save_xtc=False):
         'em': [
             "integrator      = steep",
             f"nsteps          = {nsteps}",
-            "emtol           = 100.0",
+            "emtol           = 10.0",
             "emstep          = 0.01",
             "nstlog          = 500",
             "nstenergy       = 100",
@@ -279,7 +279,7 @@ def _write_mdp(path, mode, nsteps, energygrps=False, save_xtc=False):
         'nvt': [
             "integrator      = md",
             f"nsteps          = {nsteps}",
-            "dt              = 0.002",
+            f"dt              = {dt}",
             "nstlog          = 2500",
             f"nstenergy       = {nstenerg}",
             "nstxout         = 0",
@@ -292,6 +292,15 @@ def _write_mdp(path, mode, nsteps, energygrps=False, save_xtc=False):
             "pcoupl          = no",
         ],
     }
+    if mode == 'nvt' and annealing_start is not None:
+        t_end = nsteps * dt
+        n_grp = len(_COMPONENTS)
+        base['nvt'] += [
+            "annealing         = " + ' '.join(['single'] * n_grp),
+            "annealing-npoints = " + ' '.join(['2'] * n_grp),
+            "annealing-time    = " + ' '.join([f'0.0 {t_end:.3f}'] * n_grp),
+            "annealing-temp    = " + ' '.join([f'{annealing_start:.0f} {int(TEMPERATURE)}'] * n_grp),
+        ]
     extra = []
     if energygrps:
         extra += [f"energygrps      = {egroups}"]
@@ -512,10 +521,12 @@ def run_simulation():
         _write_top(top)
         _write_gro(gro)
         _write_ndx(ndx)
-        _write_mdp(em_mdp,  'em',  nsteps=5000)
+        _write_mdp(em_mdp,  'em',  nsteps=50000)
         nvt_steps = max(5000, int(SIM_TIME_PS / 0.002))
         # GPU runs: no energygrps so GPU non-bonded is fully utilised
-        _write_mdp(eq_mdp,   'nvt', nsteps=5000,      energygrps=False, save_xtc=False)
+        prewarm_mdp = os.path.join(workdir, "prewarm.mdp")
+        _write_mdp(prewarm_mdp, 'nvt', nsteps=500, energygrps=False, save_xtc=False, dt=0.001)
+        _write_mdp(eq_mdp,   'nvt', nsteps=10000,     energygrps=False, save_xtc=False, dt=0.001, annealing_start=10)
         _write_mdp(nvt_mdp,  'nvt', nsteps=nvt_steps, energygrps=False, save_xtc=True)
         # Analysis rerun: energygrps enabled for cross-component LJ extraction
         _write_mdp(anal_mdp, 'nvt', nsteps=1,          energygrps=True,  save_xtc=False)
@@ -528,18 +539,33 @@ def run_simulation():
         if rc != 0: sys.exit("[prepare] grompp(em) failed")
 
         _sync_to_nodes(workdir, os.path.join(workdir, "em.tpr"))
-        rc, _ = _mpirun_gpu("em", workdir, timeout=120, label="mdrun(em)")
+        rc, _ = _mpirun_gpu("em", workdir, timeout=3600, label="mdrun(em)")
         if rc != 0: sys.exit("[prepare] mdrun(em) failed")
         _pull_from_rank0(workdir, "em.gro")
 
+        # Pre-warm: 0.5ps NVT at 10K to settle bad contacts before full-T eq
+        prewarm_ref_t = ' '.join(['10'] * len(_COMPONENTS))
+        with open(prewarm_mdp) as _f:
+            _pw = _f.read().replace(f"ref-t           = " + ' '.join([str(int(TEMPERATURE))] * len(_COMPONENTS)), f"ref-t           = {prewarm_ref_t}")
+        with open(prewarm_mdp, 'w') as _f:
+            _f.write(_pw)
+        rc, _ = _run([GMX, "grompp", "-f", prewarm_mdp, "-c", "em.gro", "-p", top,
+                      "-n", ndx, "-o", "prewarm.tpr", "-maxwarn", "5"],
+                     workdir, timeout=60, label="grompp(prewarm)")
+        if rc != 0: sys.exit("[prepare] grompp(prewarm) failed")
+        _sync_to_nodes(workdir, os.path.join(workdir, "prewarm.tpr"))
+        rc, _ = _mpirun_gpu("prewarm", workdir, timeout=120, label="mdrun(prewarm)")
+        if rc != 0: sys.exit("[prepare] mdrun(prewarm) failed")
+        _pull_from_rank0(workdir, "prewarm.gro")
+
         # NVT equilibration (10 ps)
-        rc, _ = _run([GMX, "grompp", "-f", eq_mdp, "-c", "em.gro", "-p", top,
+        rc, _ = _run([GMX, "grompp", "-f", eq_mdp, "-c", "prewarm.gro", "-p", top,
                       "-n", ndx, "-o", "eq.tpr", "-maxwarn", "5"],
                      workdir, timeout=60, label="grompp(eq)")
         if rc != 0: sys.exit("[prepare] grompp(eq) failed")
 
         _sync_to_nodes(workdir, os.path.join(workdir, "eq.tpr"))
-        rc, _ = _mpirun_gpu("eq", workdir, timeout=120, label="mdrun(eq)")
+        rc, _ = _mpirun_gpu("eq", workdir, timeout=14400, label="mdrun(eq)")
         if rc != 0: sys.exit("[prepare] mdrun(eq) failed")
         _pull_from_rank0(workdir, "eq.gro")
 
@@ -563,7 +589,7 @@ def run_simulation():
 
         rc, _ = _run([MPIRUN, "-n", "1", GMX, "mdrun", "-v",
                       "-rerun", "prod.xtc", "-deffnm", "analysis", "-ntomp", NTOMP],
-                     workdir, timeout=120, label="mdrun(rerun)")
+                     workdir, timeout=900, label="mdrun(rerun)")
         if rc != 0: sys.exit("[prepare] mdrun(rerun) failed")
 
         _cleanup_remote(workdir)
