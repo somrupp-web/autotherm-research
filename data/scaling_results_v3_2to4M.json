@@ -1,0 +1,23 @@
+[
+  {
+    "n_total": 2000000,
+    "bench_ps": 200.0,
+    "t_3node_s": 1552.2,
+    "t_1node_s": 2295.6,
+    "speedup": 1.479
+  },
+  {
+    "n_total": 3000000,
+    "bench_ps": 200.0,
+    "t_3node_s": 2644.14,
+    "t_1node_s": 3782.8,
+    "speedup": 1.431
+  },
+  {
+    "n_total": 4000000,
+    "bench_ps": 200.0,
+    "t_3node_s": 3540.85,
+    "t_1node_s": 4948.87,
+    "speedup": 1.398
+  }
+]

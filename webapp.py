@@ -57,25 +57,31 @@ def _set_ui_mode(mode, ip=None, saved_path=_UNSET, repo=None):
         if repo:                     _ui_cluster_repo = repo.strip()
         if saved_path is not _UNSET: _ui_saved_file   = saved_path
 
+_DATA_DIR = os.path.join(_HERE, "data")
+
 def _list_saved_runs():
-    """Return list of (label, path) for all state_*.json files in _HERE."""
+    """Return list of (label, path) for all state_*.json files in data/."""
     import glob as _glob
-    files = sorted(_glob.glob(os.path.join(_HERE, "state_*.json")))
+    files = sorted(_glob.glob(os.path.join(_DATA_DIR, "state_*.json")))
     results = []
     for p in files:
         label = os.path.basename(p).replace("state_", "").replace(".json", "").replace("_", " ")
         results.append((label, p))
     return results
 
-# ── Real-time GPU telemetry from compute nodes ────────────────────────────────
+# ── Real-time GPU telemetry from all 4 cluster nodes ──────────────────────────
+# IDs 0..3 match the dashboard's gpu_live_3d.html node ordering
 COMPUTE_NODES_GPU = [
-    ('spark-0c01', '10.137.203.184'),
-    ('spark-1aa0', '10.137.203.174'),
-    ('spark-1b93', '10.137.203.177'),
+    {"id": 0, "name": "GPU 0", "role": "vLLM", "ip": "10.137.203.228"},
+    {"id": 1, "name": "GPU 1", "role": "PME",  "ip": "10.137.203.184"},
+    {"id": 2, "name": "GPU 2", "role": "PP",   "ip": "10.137.203.174"},
+    {"id": 3, "name": "GPU 3", "role": "PP",   "ip": "10.137.203.177"},
 ]
-_gpu_history     = []   # rolling list of avg GPU util % floats
-_gpu_lock        = threading.Lock()
-GPU_HISTORY_MAX  = 360  # 1 hour at 10 s intervals
+_gpu_per_node_history = []   # list of {ts: float, util: {id:int -> %}}
+_gpu_history          = []   # legacy: rolling avg across non-vLLM nodes (kept for backward compat)
+_gpu_lock             = threading.Lock()
+GPU_HISTORY_MAX_NEW   = 720  # 1 hour at 5 s intervals
+GPU_HISTORY_MAX       = 360  # legacy
 
 def _query_gpu_util(ip):
     try:
@@ -94,22 +100,26 @@ def _query_gpu_util(ip):
 
 def _gpu_poll_loop():
     while True:
-        results, lock2 = [], threading.Lock()
-        def _query(ip):
-            v = _query_gpu_util(ip)
-            if v is not None:
-                with lock2: results.append(v)
-        threads = [threading.Thread(target=_query, args=(ip,), daemon=True)
-                   for _, ip in COMPUTE_NODES_GPU]
+        ts = time.time()
+        samples, lock2 = {}, threading.Lock()
+        def _query(node):
+            v = _query_gpu_util(node["ip"])
+            with lock2: samples[node["id"]] = v
+        threads = [threading.Thread(target=_query, args=(n,), daemon=True)
+                   for n in COMPUTE_NODES_GPU]
         for t in threads: t.start()
         for t in threads: t.join(timeout=10)
-        if results:
-            avg = round(sum(results) / len(results), 1)
-            with _gpu_lock:
-                _gpu_history.append(avg)
+        with _gpu_lock:
+            _gpu_per_node_history.append({"ts": ts, "util": samples})
+            if len(_gpu_per_node_history) > GPU_HISTORY_MAX_NEW:
+                del _gpu_per_node_history[0]
+            # Also append legacy average (skip None and the vLLM node for compat)
+            non_null = [v for nid, v in samples.items() if v is not None and nid != 0]
+            if non_null:
+                _gpu_history.append(round(sum(non_null) / len(non_null), 1))
                 if len(_gpu_history) > GPU_HISTORY_MAX:
                     del _gpu_history[0]
-        time.sleep(10)
+        time.sleep(5)
 
 threading.Thread(target=_gpu_poll_loop, daemon=True).start()
 
@@ -134,7 +144,7 @@ def _fetch_cluster_data():
         return results, geom_best, geom_base, True
     except Exception:
         results = ""
-        local = os.path.join(_HERE, "results.tsv")
+        local = os.path.join(_DATA_DIR, "results.tsv")
         if os.path.exists(local):
             with open(local) as f:
                 results = f.read()
@@ -142,7 +152,7 @@ def _fetch_cluster_data():
         geom_base = ""
         for fname, var in [("nanotube_geometry_best.json", "best"),
                            ("nanotube_geometry_baseline.json", "base")]:
-            p = os.path.join(_HERE, fname)
+            p = os.path.join(_DATA_DIR, fname)
             if os.path.exists(p):
                 with open(p) as f:
                     if var == "best":  geom_best = f.read().strip()
@@ -193,7 +203,8 @@ def _build_state():
             return None
 
     with _gpu_lock:
-        gpu_tel = list(_gpu_history)
+        gpu_tel       = list(_gpu_history)
+        gpu_per_node  = list(_gpu_per_node_history) if live else []
 
     return {
         "from_cluster":          live,
@@ -208,6 +219,8 @@ def _build_state():
         "nanotube_geometry_best":     _parse_geom(geom_best_raw),
         "nanotube_geometry_baseline": _parse_geom(geom_base_raw),
         "gpu_telemetry":         gpu_tel,
+        "gpu_per_node_history":  gpu_per_node,   # multi-GPU only; bundled in saved state
+        "gpu_nodes_meta":        COMPUTE_NODES_GPU if live else [],
     }
 
 def get_state():
@@ -245,6 +258,38 @@ class _SilentHandler(SimpleHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(data)))
             self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(data)
+        elif self.path.startswith("/gpu.json"):
+            # GPU live data endpoint for gpu_live_3d.html
+            # Returns: { source: 'live'|'saved'|'mock', history: [{ts, util:{0:p,1:p,...}}, ...],
+            #            nodes: [{id, name, role, ip}, ...] }
+            with _ui_lock:
+                mode, saved = _ui_mode, _ui_saved_file
+            payload = {"history": [], "nodes": COMPUTE_NODES_GPU, "source": "mock"}
+            if mode == "saved" and saved and os.path.exists(saved):
+                try:
+                    with open(saved, encoding="utf-8") as f:
+                        st = json.load(f)
+                    hist = st.get("gpu_per_node_history") or []
+                    if hist:
+                        payload["history"] = hist
+                        payload["source"]  = "saved"
+                        payload["nodes"]   = st.get("gpu_nodes_meta") or COMPUTE_NODES_GPU
+                except Exception:
+                    pass
+            else:
+                with _gpu_lock:
+                    hist = list(_gpu_per_node_history)
+                if hist:
+                    payload["history"] = hist[-12:]   # last 60 s at 5 s cadence
+                    payload["source"]  = "live"
+            data = json.dumps(payload).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(data)
         elif self.path.startswith("/debug.json"):
@@ -1195,29 +1240,30 @@ with gr.Blocks(title="AutoTherm TIM Optimizer") as demo:
             src_label = gr.HTML(
                 "<span style='font-family:monospace;color:#6090B8;font-size:14px;font-weight:700;"
                 "padding:6px 12px;'>Source: —</span>")
-            cluster_scale_btn = gr.Button("Cluster Scaling", scale=0, size="sm",
-                                          elem_id="cluster_scale_btn")
             back_btn = gr.Button("Change Source", scale=0, size="sm",
                                  elem_classes=["secondary"])
 
-        with gr.Tabs():
-            with gr.Tab("3D Viewer  (WebGL)"):
-                gr.HTML(VIEWER_HTML, elem_id="viewer3d")
+        # 4-panel dashboard grid (cube + R_th + scaling + max atoms + GPU live)
+        gr.HTML(
+            '<div style="width:100%;height:calc(100vh - 78px);background:#04090F;">'
+            '<iframe src="http://localhost:7863/dashboard_grid.html" '
+            'style="width:100%;height:100%;border:0;display:block;background:#04090F;" '
+            'allow="cross-origin-isolated"></iframe>'
+            '</div>',
+            elem_id="dashboard_iframe_wrap",
+        )
 
-            with gr.Tab("Analytics Dashboard"):
-                img_out = gr.Image(label="", show_label=False, height=None, elem_id="img_out")
-                status  = gr.HTML(
-                    "<span style='font-family:monospace;color:#2A4060'>"
-                    "Press Start to animate all iterations, or drag the slider to jump</span>")
-                with gr.Row(elem_id="ctrl"):
-                    start_btn = gr.Button("Start Animation", variant="primary", scale=3)
-                    pause_sl  = gr.Slider(1,10,value=5,step=0.5,label="Pause per frame (s)",scale=2)
-                    iter_sl   = gr.Slider(0,99,value=0,step=1,label="Jump to iteration",scale=3)
-                    jump_btn  = gr.Button("Go", elem_classes=["secondary"], scale=1)
-
-                start_btn.click(animate,  inputs=[pause_sl], outputs=[img_out,status])
-                jump_btn.click( jump_to,  inputs=[iter_sl],  outputs=[img_out,status])
-                iter_sl.release(jump_to,  inputs=[iter_sl],  outputs=[img_out,status])
+        # Hidden controls (kept for back-compat with existing callbacks but not displayed)
+        with gr.Row(visible=False):
+            img_out   = gr.Image(label="", show_label=False, height=None, elem_id="img_out")
+            status    = gr.HTML("")
+            start_btn = gr.Button("Start Animation", visible=False)
+            pause_sl  = gr.Slider(1,10,value=5,step=0.5,visible=False)
+            iter_sl   = gr.Slider(0,99,value=0,step=1,visible=False)
+            jump_btn  = gr.Button("Go", visible=False)
+        start_btn.click(animate, inputs=[pause_sl], outputs=[img_out, status])
+        jump_btn.click(jump_to,  inputs=[iter_sl],  outputs=[img_out, status])
+        iter_sl.release(jump_to, inputs=[iter_sl],  outputs=[img_out, status])
 
     # ── Screen 3: Cluster Scaling image overlay ───────────────────────────────
     with gr.Column(visible=False, elem_id="cluster_scaling_screen") as cluster_screen:
@@ -1300,10 +1346,6 @@ with gr.Blocks(title="AutoTherm TIM Optimizer") as demo:
 
     back_btn.click(lambda: (gr.update(visible=True), gr.update(visible=False)),
                    outputs=[connect_screen, dashboard_screen])
-
-    cluster_scale_btn.click(
-        lambda: (gr.update(visible=False), gr.update(visible=True)),
-        outputs=[dashboard_screen, cluster_screen])
 
     cluster_close_btn.click(
         lambda: (gr.update(visible=True), gr.update(visible=False)),

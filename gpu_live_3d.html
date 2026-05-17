@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GPU Live — 4-Node Cluster Activity (3D)</title>
+<style>
+*,html,body{margin:0;padding:0;box-sizing:border-box;overflow:hidden;}
+body{background:#04090F;font-family:'Courier New',monospace;color:#C8E8FF;}
+#c{display:block;width:100vw;height:100vh;}
+
+#title{
+  position:absolute;top:14px;left:50%;transform:translateX(-50%);
+  background:rgba(4,14,28,.82);border:1px solid #1E4060;
+  border-radius:8px;padding:8px 18px;text-align:center;
+  backdrop-filter:blur(10px);pointer-events:none;z-index:5;
+  font-size:16px;color:#00D8FF;letter-spacing:1px;font-weight:bold;
+}
+#sub{font-size:13px;color:#5090B8;margin-top:3px;letter-spacing:.5px;}
+
+#live-badge{
+  position:absolute;top:18px;left:18px;
+  background:rgba(0,255,136,0.18);border:1px solid #00FF88;
+  border-radius:6px;padding:6px 12px;z-index:5;
+  font-size:13px;letter-spacing:1px;color:#00FF88;font-weight:bold;
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse{
+  0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(0,255,136,0.5); }
+  50%      { opacity: 0.7; box-shadow: 0 0 16px rgba(0,255,136,0.9); }
+}
+
+#legend{
+  position:absolute;top:60px;left:14px;
+  background:rgba(4,14,28,.82);border:1px solid #1E4060;
+  border-radius:8px;padding:12px 16px;z-index:5;
+  backdrop-filter:blur(10px);pointer-events:none;
+  font-size:14px;letter-spacing:.5px;
+}
+.lrow{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:3px 0;}
+.lcell{display:flex;align-items:center;gap:8px;}
+.swatch{width:14px;height:6px;border-radius:2px;}
+.s-n0{background:#00D8FF;box-shadow:0 0 10px #00D8FF;}
+.s-n1{background:#00FF88;box-shadow:0 0 10px #00FF88;}
+.s-n2{background:#FFAA00;box-shadow:0 0 10px #FFAA00;}
+.s-n3{background:#FF4488;box-shadow:0 0 10px #FF4488;}
+.lval{color:#C8E8FF;font-weight:bold;min-width:36px;text-align:right;}
+
+#stats{
+  position:absolute;top:14px;right:14px;
+  background:rgba(4,14,28,.82);border:1px solid #1E4060;
+  border-radius:8px;padding:12px 16px;z-index:5;
+  backdrop-filter:blur(10px);pointer-events:none;
+  font-size:14px;letter-spacing:.5px;
+}
+.stat-row{display:flex;justify-content:space-between;gap:18px;margin:3px 0;}
+.k{color:#5090B8;}
+.v{color:#00FF88;font-weight:bold;}
+
+#caption{
+  position:absolute;bottom:14px;left:50%;transform:translateX(-50%);
+  background:rgba(4,14,28,.82);border:1px solid #1E4060;
+  border-radius:8px;padding:8px 16px;
+  backdrop-filter:blur(10px);pointer-events:none;
+  font-size:13px;color:#5090B8;letter-spacing:.5px;z-index:5;
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="title">
+  GPU LIVE — 4-NODE CLUSTER UTILIZATION
+  <div id="sub">5 s poll · 60 s rolling window · via paramiko nvidia-smi</div>
+</div>
+
+<div id="live-badge">● LIVE</div>
+
+<div id="legend">
+  <div class="lrow">
+    <div class="lcell"><div class="swatch s-n0"></div><span>GPU 0 (vLLM)</span></div>
+    <div class="lval" id="v-n0">--%</div>
+  </div>
+  <div class="lrow">
+    <div class="lcell"><div class="swatch s-n1"></div><span>GPU 1 (PME)</span></div>
+    <div class="lval" id="v-n1">--%</div>
+  </div>
+  <div class="lrow">
+    <div class="lcell"><div class="swatch s-n2"></div><span>GPU 2 (PP)</span></div>
+    <div class="lval" id="v-n2">--%</div>
+  </div>
+  <div class="lrow">
+    <div class="lcell"><div class="swatch s-n3"></div><span>GPU 3 (PP)</span></div>
+    <div class="lval" id="v-n3">--%</div>
+  </div>
+</div>
+
+<div id="stats">
+  <div class="stat-row"><span class="k">cluster avg</span><span class="v" id="s-avg">--%</span></div>
+  <div class="stat-row"><span class="k">peak (any)</span><span class="v" id="s-peak">--%</span></div>
+  <div class="stat-row"><span class="k">samples</span><span class="v" id="s-samples">--</span></div>
+</div>
+
+<div id="caption">drag to rotate, scroll to zoom · ribbon height = GPU utilization %</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── Configuration ─────────────────────────────────────────────────────────
+const NODES = [
+  { id: 0, name: 'GPU 0', role: 'vLLM',  color: 0x00D8FF, glow: 0x004060 },
+  { id: 1, name: 'GPU 1', role: 'PME',   color: 0x00FF88, glow: 0x004422 },
+  { id: 2, name: 'GPU 2', role: 'PP',    color: 0xFFAA00, glow: 0x442800 },
+  { id: 3, name: 'GPU 3', role: 'PP',    color: 0xFF4488, glow: 0x441122 },
+];
+const WINDOW_SECS = 60;
+const POLL_INTERVAL_MS = 5000;
+const POINTS = Math.ceil(WINDOW_SECS / (POLL_INTERVAL_MS / 1000));   // 12
+
+// ── Data source: try /gpu.json (live or saved) ──────────────────────────────
+// Mock generator is fallback when source === 'mock' (no real data available).
+function generateMockSample(node, t) {
+  const ph = node.id * 1.3 + t * 0.4;
+  if (node.id === 0) {
+    return 8 + 4 * Math.sin(t * 0.7) + 6 * Math.random()
+         + (Math.random() < 0.1 ? 40 * Math.random() : 0);
+  }
+  if (node.id === 1) {
+    return 78 + 10 * Math.sin(ph) + 6 * Math.sin(ph * 0.4) + 4 * Math.random();
+  }
+  return 72 + 12 * Math.sin(ph * 1.1) + 8 * Math.sin(ph * 0.3) + 5 * Math.random();
+}
+let mockT = 0;
+function pollMock() {
+  const sample = {};
+  for (const n of NODES) {
+    sample[n.id] = Math.max(0, Math.min(100, generateMockSample(n, mockT)));
+  }
+  mockT += POLL_INTERVAL_MS / 1000;
+  return sample;
+}
+
+// Last source label shown in the live badge ('live' / 'saved' / 'mock')
+let currentSource = 'mock';
+let savedHistory  = null;   // for 'saved' mode: pre-load full history and step through it
+let savedStepIdx  = 0;
+
+async function fetchGpuJson() {
+  try {
+    const r = await fetch('/gpu.json', { cache: 'no-store' });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (_) { return null; }
+}
+
+async function pollLive() {
+  // Returns {id -> util%}, or null if no live data
+  const resp = await fetchGpuJson();
+  if (!resp || !resp.history || !resp.history.length) {
+    currentSource = 'mock';
+    return null;
+  }
+  const last = resp.history[resp.history.length - 1];
+  currentSource = resp.source || 'live';
+  const out = {};
+  for (const n of NODES) {
+    out[n.id] = (last.util && typeof last.util[n.id] === 'number') ? last.util[n.id] : 0;
+  }
+  return out;
+}
+
+function pollSavedStep() {
+  if (!savedHistory || !savedHistory.length) return null;
+  const e = savedHistory[savedStepIdx % savedHistory.length];
+  savedStepIdx++;
+  const out = {};
+  for (const n of NODES) {
+    out[n.id] = (e.util && typeof e.util[n.id] === 'number') ? e.util[n.id] : 0;
+  }
+  return out;
+}
+
+// Initialize rolling buffer
+const buffers = {};
+for (const n of NODES) buffers[n.id] = new Array(POINTS).fill(0);
+
+// ── Three.js scene setup ───────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const scene  = new THREE.Scene();
+scene.background = new THREE.Color('#04090F');
+scene.fog        = new THREE.Fog('#04090F', 22, 70);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(14, 9, 14);
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+
+const controls = new OrbitControls(camera, canvas);
+controls.target.set(0, 2.5, 0);
+controls.enableDamping   = true;
+controls.dampingFactor   = 0.06;
+controls.autoRotate      = true;
+controls.autoRotateSpeed = 0.4;
+canvas.addEventListener('mouseenter', () => { controls.autoRotate = false; });
+canvas.addEventListener('mouseleave', () => { controls.autoRotate = true;  });
+controls.enablePan       = false;
+controls.minDistance     = 10;
+controls.maxDistance     = 30;
+controls.minPolarAngle   = Math.PI * 0.18;
+controls.maxPolarAngle   = Math.PI * 0.55;
+
+// Lighting
+scene.add(new THREE.AmbientLight(0x4080a0, 0.55));
+const key  = new THREE.DirectionalLight(0x00D8FF, 1.1); key.position.set(6, 14, 6);   scene.add(key);
+const fill = new THREE.PointLight(0x00FF88, 0.6, 25);   fill.position.set(-6, 4, 6);  scene.add(fill);
+const rim  = new THREE.PointLight(0xFF4422, 0.5, 30);   rim.position.set(8, 2, -8);   scene.add(rim);
+
+// Floor grid
+scene.add(new THREE.GridHelper(20, 20, 0x1E4060, 0x0E1E30));
+
+// ── Coordinate mapping ─────────────────────────────────────────────────────
+// X = time (latest at right, x=+X_SCALE), Y = util%, Z = node row
+const X_SPAN = 11;
+const X_MIN = -X_SPAN/2;
+const X_MAX = +X_SPAN/2;
+const Y_SCALE = 0.05;   // 100% -> 5 units tall
+const Z_ROW = 1.2;      // spacing between node rows
+
+const xOf = (i) => X_MIN + (X_MAX - X_MIN) * (i / (POINTS - 1));
+const yOf = (pct) => pct * Y_SCALE;
+const zOf = (nodeIdx) => (nodeIdx - 1.5) * Z_ROW;   // -1.8 .. +1.8
+
+// Axis lines
+function makeAxis(pts, color) {
+  const g = new THREE.BufferGeometry().setFromPoints(pts.map(p => new THREE.Vector3(...p)));
+  return new THREE.Line(g, new THREE.LineBasicMaterial({ color }));
+}
+scene.add(makeAxis([[X_MIN, 0, zOf(0) - 0.6], [X_MAX, 0, zOf(0) - 0.6]], 0x2E5070));
+scene.add(makeAxis([[X_MIN, 0, zOf(0) - 0.6], [X_MIN, yOf(100), zOf(0) - 0.6]], 0x2E5070));
+
+// Util% tick lines for visual reference (25/50/75/100%)
+[25, 50, 75, 100].forEach(p => {
+  for (const n of NODES) {
+    scene.add(makeAxis(
+      [[X_MIN, yOf(p), zOf(n.id)], [X_MAX, yOf(p), zOf(n.id)]],
+      0x142436
+    ));
+  }
+});
+
+// ── One ribbon per node (rebuilt each tick) ────────────────────────────────
+const ribbons = {};
+const ribbonGroups = {};
+const spheres = {};
+
+for (const n of NODES) {
+  const group = new THREE.Group();
+  scene.add(group);
+  ribbonGroups[n.id] = group;
+  ribbons[n.id] = null;
+  spheres[n.id] = [];
+}
+
+function rebuildRibbon(node) {
+  const group = ribbonGroups[node.id];
+  // Clear previous
+  while (group.children.length) {
+    const c = group.children[0];
+    group.remove(c);
+    c.geometry?.dispose?.();
+    c.material?.dispose?.();
+  }
+
+  const buf = buffers[node.id];
+  const pts = buf.map((v, i) => new THREE.Vector3(xOf(i), yOf(v), zOf(node.id)));
+
+  // Tube
+  if (pts.length > 1) {
+    const curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.3);
+    const tube  = new THREE.TubeGeometry(curve, 100, 0.10, 12, false);
+    const mat   = new THREE.MeshPhongMaterial({
+      color: node.color, emissive: node.glow, emissiveIntensity: 0.55,
+      shininess: 90, specular: 0xffffff,
+    });
+    group.add(new THREE.Mesh(tube, mat));
+  }
+
+  // Marker at the latest data point
+  const last = pts[pts.length - 1];
+  const sphGeo = new THREE.SphereGeometry(0.18, 18, 18);
+  const sphMat = new THREE.MeshPhongMaterial({
+    color: node.color, emissive: node.color, emissiveIntensity: 0.8, shininess: 100,
+  });
+  const sph = new THREE.Mesh(sphGeo, sphMat);
+  sph.position.copy(last);
+  group.add(sph);
+
+  // "Floor shadow" connecting line for the latest point
+  const dropGeo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(last.x, 0, last.z),
+    last.clone(),
+  ]);
+  group.add(new THREE.Line(dropGeo, new THREE.LineBasicMaterial({
+    color: node.color, transparent: true, opacity: 0.4,
+  })));
+}
+
+// ── Labels ────────────────────────────────────────────────────────────────
+const labelLayer = document.createElement('div');
+labelLayer.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
+document.body.appendChild(labelLayer);
+
+function mkLabel(text, color, size = 13) {
+  const el = document.createElement('div');
+  el.innerHTML = text;
+  el.style.cssText =
+    `position:absolute;color:${color};font-size:${size}px;font-family:'Courier New',monospace;` +
+    `letter-spacing:.4px;text-shadow:0 0 6px rgba(0,0,0,.9);transform:translate(-50%,-50%);` +
+    `pointer-events:none;white-space:nowrap;`;
+  labelLayer.appendChild(el);
+  return el;
+}
+
+const labels = [];
+
+// Node row labels (left side)
+for (const n of NODES) {
+  const colHex = '#' + n.color.toString(16).padStart(6, '0');
+  labels.push({
+    el: mkLabel(`<b style="font-size:14px">${n.name.toUpperCase()}</b><br><span style="color:#5090B8;font-size:11px">${n.role}</span>`, colHex, 13),
+    pos: new THREE.Vector3(X_MIN - 0.8, 0.3, zOf(n.id)),
+  });
+}
+
+// X axis time labels
+[60, 45, 30, 15, 0].forEach((sec, idx) => {
+  const i = POINTS - 1 - Math.round(sec / (POLL_INTERVAL_MS/1000));
+  labels.push({
+    el: mkLabel(`-${sec}s`, '#5090B8', 12),
+    pos: new THREE.Vector3(xOf(i), -0.3, zOf(0) - 0.6),
+  });
+});
+labels[labels.length - 1].el.innerHTML = '<b style="color:#00FF88;font-size:13px">NOW</b>';
+
+// Y axis tick labels (one set, at the back-left)
+[25, 50, 75, 100].forEach(p => {
+  labels.push({
+    el: mkLabel(`${p}%`, '#5090B8', 12),
+    pos: new THREE.Vector3(X_MIN - 0.4, yOf(p), zOf(0) - 0.6),
+  });
+});
+
+function updateLabels() {
+  const tmp = new THREE.Vector3();
+  for (const l of labels) {
+    tmp.copy(l.pos).project(camera);
+    const x = (tmp.x * 0.5 + 0.5) * innerWidth;
+    const y = (1 - (tmp.y * 0.5 + 0.5)) * innerHeight;
+    const hidden = tmp.z < -1 || tmp.z > 1;
+    l.el.style.left = `${x}px`;
+    l.el.style.top  = `${y}px`;
+    l.el.style.display = hidden ? 'none' : 'block';
+  }
+}
+
+// ── Live polling loop (auto-selects live / saved / mock based on /gpu.json) ──
+let sampleCount = 0;
+
+async function tick() {
+  let sample = null;
+  if (currentSource === 'live') {
+    sample = await pollLive();
+  } else if (currentSource === 'saved') {
+    sample = pollSavedStep();
+  }
+  if (!sample) {
+    sample = pollMock();
+    currentSource = 'mock';
+  }
+  for (const n of NODES) {
+    buffers[n.id].shift();
+    buffers[n.id].push(sample[n.id]);
+    rebuildRibbon(n);
+  }
+  sampleCount++;
+  for (const n of NODES) {
+    const v = (sample[n.id] || 0).toFixed(0);
+    document.getElementById(`v-n${n.id}`).textContent = v + '%';
+  }
+  const all = Object.values(sample);
+  const avg = all.reduce((a, b) => a + b, 0) / all.length;
+  const peak = Math.max(...all);
+  document.getElementById('s-avg').textContent  = avg.toFixed(0) + '%';
+  document.getElementById('s-peak').textContent = peak.toFixed(0) + '%';
+  document.getElementById('s-samples').textContent = sampleCount + ' / ' + POINTS;
+  // Reflect source in the live badge text
+  const badge = document.getElementById('live-badge');
+  if (badge) {
+    if (currentSource === 'live')  badge.textContent = '● LIVE';
+    if (currentSource === 'saved') badge.textContent = '● REPLAY';
+    if (currentSource === 'mock')  badge.textContent = '● DEMO';
+  }
+}
+
+async function init() {
+  // First fetch: determine source and prime buffers
+  const resp = await fetchGpuJson();
+  if (resp && resp.source === 'saved' && resp.history && resp.history.length) {
+    currentSource = 'saved';
+    savedHistory  = resp.history;
+  } else if (resp && resp.source === 'live' && resp.history && resp.history.length) {
+    currentSource = 'live';
+  } else {
+    currentSource = 'mock';
+  }
+  // Prime the buffer
+  for (let i = 0; i < POINTS; i++) await tick();
+  // Start polling cadence
+  setInterval(tick, POLL_INTERVAL_MS);
+}
+init();
+
+// ── Render loop ───────────────────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  updateLabels();
+  renderer.render(scene, camera);
+}
+animate();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ── Double-click to request expand from parent dashboard ─────────────────
+document.addEventListener('dblclick', () => {
+  if (window.parent === window) return;
+  window.parent.postMessage({
+    type:  'expand',
+    src:   location.href,
+    title: 'GPU LIVE — 4-NODE CLUSTER UTILIZATION',
+  }, '*');
+});
+
+// ── Cursor-following "double-click to zoom in" hint (iframe + not-expanded) ──
+if (window.parent !== window && !new URLSearchParams(location.search).has('expanded')) {
+  const _hint = document.createElement('div');
+  _hint.textContent = 'double-click to zoom in';
+  _hint.style.cssText =
+    `position:fixed;pointer-events:none;z-index:9999;` +
+    `background:rgba(4,14,28,0.92);border:1px solid #00D8FF;` +
+    `color:#00D8FF;font-size:11px;font-family:'Courier New',monospace;` +
+    `padding:4px 10px;border-radius:4px;letter-spacing:.4px;` +
+    `box-shadow:0 0 12px rgba(0,216,255,0.35);` +
+    `display:none;white-space:nowrap;`;
+  document.body.appendChild(_hint);
+  document.addEventListener('mousemove', (e) => {
+    _hint.style.left = (e.clientX + 16) + 'px';
+    _hint.style.top  = (e.clientY + 16) + 'px';
+    _hint.style.display = 'block';
+  });
+  document.addEventListener('mouseleave', () => { _hint.style.display = 'none'; });
+}
+</script>
+</body>
+</html>

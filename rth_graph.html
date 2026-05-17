@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Best R_th — Optimization Progress (3D)</title>
+<style>
+*,html,body{margin:0;padding:0;box-sizing:border-box;overflow:hidden;}
+body{background:#04090F;font-family:'Courier New',monospace;color:#C8E8FF;}
+#c{display:block;width:100vw;height:100vh;}
+
+#title{
+  position:absolute;top:14px;left:50%;transform:translateX(-50%);
+  background:rgba(4,14,28,.82);border:1px solid #1E4060;
+  border-radius:8px;padding:8px 18px;text-align:center;
+  backdrop-filter:blur(10px);pointer-events:none;z-index:5;
+  font-size:16px;color:#00D8FF;letter-spacing:1px;font-weight:bold;
+}
+#sub{font-size:13px;color:#5090B8;margin-top:3px;letter-spacing:.5px;}
+
+#stats{
+  position:absolute;top:14px;right:14px;
+  background:rgba(4,14,28,.82);border:1px solid #1E4060;
+  border-radius:8px;padding:12px 16px;z-index:5;
+  backdrop-filter:blur(10px);pointer-events:none;
+  font-size:14px;letter-spacing:.5px;
+}
+.stat-row{display:flex;justify-content:space-between;gap:18px;margin:3px 0;}
+.k{color:#5090B8;}
+.v{color:#00FF88;font-weight:bold;}
+
+#legend{
+  position:absolute;top:14px;left:14px;
+  background:rgba(4,14,28,.82);border:1px solid #1E4060;
+  border-radius:8px;padding:12px 16px;z-index:5;
+  backdrop-filter:blur(10px);pointer-events:none;
+  font-size:14px;letter-spacing:.5px;
+}
+.lrow{display:flex;align-items:center;gap:8px;margin:3px 0;}
+.swatch{width:14px;height:6px;border-radius:2px;}
+.s-base{background:#FF4422;box-shadow:0 0 10px #FF4422;}
+.s-curve{background:#00D8FF;box-shadow:0 0 10px #00D8FF;}
+.s-best{background:#00FF88;box-shadow:0 0 10px #00FF88;}
+
+#caption{
+  position:absolute;bottom:14px;left:50%;transform:translateX(-50%);
+  background:rgba(4,14,28,.82);border:1px solid #1E4060;
+  border-radius:8px;padding:8px 16px;
+  backdrop-filter:blur(10px);pointer-events:none;
+  font-size:13px;color:#5090B8;letter-spacing:.5px;z-index:5;
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="title">
+  OPTIMIZATION PROGRESS — BEST R_TH OVER ITERATIONS
+  <div id="sub">LLM-driven design search · Nemotron 120B + GROMACS</div>
+</div>
+
+<div id="legend">
+  <div class="lrow"><div class="swatch s-base"></div><span>baseline</span></div>
+  <div class="lrow"><div class="swatch s-curve"></div><span>best so far</span></div>
+  <div class="lrow"><div class="swatch s-best"></div><span>global best</span></div>
+</div>
+
+<div id="stats">
+  <div class="stat-row"><span class="k">baseline R_th</span><span class="v" id="s-base"></span></div>
+  <div class="stat-row"><span class="k">best R_th</span><span class="v" id="s-best"></span></div>
+  <div class="stat-row"><span class="k">reduction</span><span class="v" id="s-red"></span></div>
+  <div class="stat-row"><span class="k">keeps / iter</span><span class="v" id="s-keeps"></span></div>
+</div>
+
+<div id="caption">R_th in × 10⁻⁶ m²·K/W  ·  lower is better  ·  drag to rotate, scroll to zoom</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── Data: try /state.json from webapp; fallback to embedded default ──────
+const FALLBACK_STATE = {
+  baseline_rth: 2.28e-05,
+  best_rth:     4.278888e-06,
+  best_iter:    48,
+  total_iters:  101,
+  rth_history: [
+    { iter: 0,  rth: 2.280000e-05, status: "keep" },
+    { iter: 5,  rth: 7.385124e-06, status: "keep" },
+    { iter: 6,  rth: 5.430299e-06, status: "keep" },
+    { iter: 7,  rth: 4.790291e-06, status: "keep" },
+    { iter: 8,  rth: 4.329951e-06, status: "keep" },
+    { iter: 9,  rth: 4.279358e-06, status: "keep" },
+    { iter: 48, rth: 4.278888e-06, status: "keep" },
+  ],
+};
+
+let STATE = FALLBACK_STATE;
+try {
+  // Synchronous-ish fetch via XHR so we can build the scene with real data on first paint.
+  const xhr = new XMLHttpRequest();
+  xhr.open('GET', '/state.json', false);
+  xhr.send();
+  if (xhr.status === 200) {
+    const remote = JSON.parse(xhr.responseText);
+    if (remote && remote.rth_history && remote.rth_history.length) {
+      STATE = remote;
+    }
+  }
+} catch (_) { /* network error → use fallback */ }
+
+// Keeps only — running optimisation curve
+const keeps = (STATE.rth_history || []).filter(h => h.status === "keep" && h.rth);
+// Compute best iter / rth if missing
+if (!STATE.best_rth || !STATE.best_iter) {
+  let bestE = keeps.reduce((a, b) => (b.rth < a.rth ? b : a), keeps[0] || {rth: 0, iter: 0});
+  STATE.best_rth  = STATE.best_rth  || bestE.rth;
+  STATE.best_iter = STATE.best_iter || bestE.iter;
+}
+STATE.baseline_rth = STATE.baseline_rth || (keeps[0] && keeps[0].rth) || 2.28e-5;
+STATE.total_iters  = STATE.total_iters  || (keeps.length ? keeps[keeps.length-1].iter + 1 : 100);
+
+// Populate stats panel
+document.getElementById('s-base').textContent  = (STATE.baseline_rth * 1e6).toFixed(2) + ' × 10⁻⁶';
+document.getElementById('s-best').textContent  = (STATE.best_rth * 1e6).toFixed(3) + ' × 10⁻⁶';
+document.getElementById('s-red').textContent   = '−' + ((1 - STATE.best_rth / STATE.baseline_rth) * 100).toFixed(1) + '%';
+document.getElementById('s-keeps').textContent = keeps.length + ' / ' + STATE.total_iters;
+
+// ── Three.js scene setup ───────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const scene  = new THREE.Scene();
+scene.background = new THREE.Color('#04090F');
+scene.fog        = new THREE.Fog('#04090F', 22, 70);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(16, 11, 16);
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+
+// Orbit + auto-rotate (cinematic)
+const controls = new OrbitControls(camera, canvas);
+controls.target.set(0, 4, 0);
+controls.enableDamping   = true;
+controls.dampingFactor   = 0.06;
+controls.autoRotate      = true;
+controls.autoRotateSpeed = 0.5;   // ~12 s/rev
+canvas.addEventListener('mouseenter', () => { controls.autoRotate = false; });
+canvas.addEventListener('mouseleave', () => { controls.autoRotate = true;  });
+controls.enablePan       = false;
+controls.minDistance     = 12;
+controls.maxDistance     = 32;
+controls.minPolarAngle   = Math.PI * 0.18;
+controls.maxPolarAngle   = Math.PI * 0.55;
+
+// Lighting
+scene.add(new THREE.AmbientLight(0x4080a0, 0.55));
+const key  = new THREE.DirectionalLight(0x00D8FF, 1.1);  key.position.set(6, 14, 6);  scene.add(key);
+const fill = new THREE.PointLight(0x00FF88, 0.6, 25);    fill.position.set(-6, 4, 6); scene.add(fill);
+const rim  = new THREE.PointLight(0xFF4422, 0.5, 30);    rim.position.set(8, 2, -8);  scene.add(rim);
+
+// ── Coordinate mapping ─────────────────────────────────────────────────────
+// X = iteration (0..101 linear),  Y = R_th in μm²K/W (log),  Z = 0 (single ribbon)
+const X_SCALE = 0.14;                // 101 iters * 0.14 ≈ 14 units
+const Y_MIN_LOG = Math.log10(4);     // ~0.602
+const Y_MAX_LOG = Math.log10(25);    // ~1.398  (baseline 22.8 sits near top)
+const Y_SCALE = 8 / (Y_MAX_LOG - Y_MIN_LOG);
+const xOf = (it)   => it * X_SCALE - 7;
+const yOf = (rth)  => (Math.log10(rth * 1e6) - Y_MIN_LOG) * Y_SCALE + 0.5;
+
+// Floor grid
+scene.add(new THREE.GridHelper(20, 20, 0x1E4060, 0x0E1E30));
+
+// Axis lines
+function makeAxis(pts, color) {
+  const g = new THREE.BufferGeometry().setFromPoints(pts.map(p => new THREE.Vector3(...p)));
+  return new THREE.Line(g, new THREE.LineBasicMaterial({ color }));
+}
+scene.add(makeAxis([[xOf(0), 0, 0], [xOf(STATE.total_iters), 0, 0]], 0x2E5070));  // X
+scene.add(makeAxis([[xOf(0), 0, 0], [xOf(0), 9, 0]], 0x2E5070));                  // Y
+
+// ── Baseline reference plane (red dashed-like) ─────────────────────────────
+const baselineY = yOf(STATE.baseline_rth);
+const planeGeom = new THREE.PlaneGeometry(xOf(STATE.total_iters) - xOf(0), 2.5);
+const planeMat  = new THREE.MeshBasicMaterial({
+  color: 0xFF4422, transparent: true, opacity: 0.10, side: THREE.DoubleSide,
+});
+const plane = new THREE.Mesh(planeGeom, planeMat);
+plane.rotation.x = -Math.PI / 2;
+plane.position.set((xOf(0) + xOf(STATE.total_iters)) / 2, baselineY, 0);
+scene.add(plane);
+// Baseline line above the plane
+scene.add(makeAxis(
+  [[xOf(0), baselineY, 0], [xOf(STATE.total_iters), baselineY, 0]], 0xFF4422
+));
+
+// ── Vertical "ribbon wall" descending from baseline through keeps ──────────
+// Build a wall that has top edge = baseline, bottom edge = optimization curve.
+// This visualizes the "improvement gap" as the filled area.
+
+const pts3D = keeps.map(k => new THREE.Vector3(xOf(k.iter), yOf(k.rth), 0));
+
+// Smooth Catmull-Rom curve through the data points
+const curve = new THREE.CatmullRomCurve3(pts3D, false, 'catmullrom', 0.35);
+const samples = curve.getPoints(120);   // dense samples for the wall
+
+// Build wall geometry: top vertices at baselineY, bottom vertices on curve
+const wallGeom = new THREE.BufferGeometry();
+const verts = [];
+const cols  = [];
+const idx   = [];
+const baseColor = new THREE.Color(0xFF4422);
+const tipColor  = new THREE.Color(0x00FF88);
+
+for (let i = 0; i < samples.length; i++) {
+  const p = samples[i];
+  // top vertex (at baseline)
+  verts.push(p.x, baselineY, p.z);
+  // bottom vertex (on curve)
+  verts.push(p.x, p.y, p.z);
+  // color gradient: red at top, green-cyan at bottom
+  const t = (baselineY - p.y) / (baselineY - yOf(STATE.best_rth));
+  const cTop = baseColor.clone();
+  const cBot = baseColor.clone().lerp(tipColor, Math.min(1, t));
+  cols.push(cTop.r, cTop.g, cTop.b);
+  cols.push(cBot.r, cBot.g, cBot.b);
+}
+// Triangles connecting consecutive pairs of top/bottom
+for (let i = 0; i < samples.length - 1; i++) {
+  const a = i * 2;
+  const b = i * 2 + 1;
+  const c = (i + 1) * 2;
+  const d = (i + 1) * 2 + 1;
+  idx.push(a, c, b);
+  idx.push(b, c, d);
+}
+wallGeom.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+wallGeom.setAttribute('color',    new THREE.Float32BufferAttribute(cols, 3));
+wallGeom.setIndex(idx);
+wallGeom.computeVertexNormals();
+const wallMat = new THREE.MeshPhongMaterial({
+  vertexColors: true, transparent: true, opacity: 0.55,
+  side: THREE.DoubleSide, shininess: 50,
+  emissive: 0x111111, emissiveIntensity: 0.4,
+});
+scene.add(new THREE.Mesh(wallGeom, wallMat));
+
+// ── The optimization curve itself (bright cyan tube) ───────────────────────
+const tubeGeo = new THREE.TubeGeometry(curve, 200, 0.16, 16, false);
+const tubeMat = new THREE.MeshPhongMaterial({
+  color: 0x00D8FF, emissive: 0x004060, emissiveIntensity: 0.6,
+  shininess: 90, specular: 0xffffff,
+});
+scene.add(new THREE.Mesh(tubeGeo, tubeMat));
+
+// ── Glowing spheres at each keep ───────────────────────────────────────────
+const sphereGeo = new THREE.SphereGeometry(0.25, 24, 24);
+const bestRth   = Math.min(...keeps.map(k => k.rth));
+keeps.forEach((k, i) => {
+  const isBest = (k.rth === bestRth);
+  const color    = isBest ? 0x00FF88 : 0x00D8FF;
+  const emissive = isBest ? 0x008844 : 0x004060;
+  const mat = new THREE.MeshPhongMaterial({
+    color, emissive, emissiveIntensity: 0.7, shininess: 100,
+  });
+  const r = isBest ? 0.42 : 0.25;
+  const geo = new THREE.SphereGeometry(r, 24, 24);
+  const s = new THREE.Mesh(geo, mat);
+  s.position.copy(pts3D[i]);
+  scene.add(s);
+});
+
+// ── HTML overlay labels ────────────────────────────────────────────────────
+const labelLayer = document.createElement('div');
+labelLayer.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
+document.body.appendChild(labelLayer);
+
+function mkLabel(text, color, size = 13) {
+  const el = document.createElement('div');
+  el.innerHTML = text;
+  el.style.cssText =
+    `position:absolute;color:${color};font-size:${size}px;font-family:'Courier New',monospace;` +
+    `letter-spacing:.4px;text-shadow:0 0 6px rgba(0,0,0,.9);transform:translate(-50%,-100%);` +
+    `pointer-events:none;white-space:nowrap;`;
+  labelLayer.appendChild(el);
+  return el;
+}
+
+const labels = [];
+
+// Only the BEST point gets a label; other keeps left clean to avoid clutter
+keeps.forEach((k, i) => {
+  if (k.rth !== bestRth) return;
+  labels.push({
+    el: mkLabel(
+      `<b>BEST</b><br>${(k.rth * 1e6).toFixed(3)} × 10⁻⁶<br>iter ${k.iter}`,
+      '#00FF88', 15
+    ),
+    pos: pts3D[i].clone().add(new THREE.Vector3(0, 1.0, 0)),
+  });
+});
+
+// X axis tick labels (iterations)
+[0, 25, 50, 75, 100].forEach(it => {
+  labels.push({
+    el: mkLabel(`iter ${it}`, '#7090B0', 12),
+    pos: new THREE.Vector3(xOf(it), 0.15, 0),
+  });
+});
+
+// Y axis ticks
+[5, 7, 10, 15, 22].forEach(v => {
+  labels.push({
+    el: mkLabel(`${v} × 10⁻⁶`, '#5090B8', 12),
+    pos: new THREE.Vector3(xOf(0) - 0.15, yOf(v * 1e-6), 0),
+  });
+});
+
+// Baseline label
+labels.push({
+  el: mkLabel(`<b>BASELINE</b>  ${(STATE.baseline_rth*1e6).toFixed(2)} × 10⁻⁶`, '#FF4422', 13),
+  pos: new THREE.Vector3(xOf(STATE.total_iters * 0.5), baselineY + 0.4, 0),
+});
+
+// Reduction callout — between baseline and best
+const reduction = (1 - STATE.best_rth/STATE.baseline_rth) * 100;
+labels.push({
+  el: mkLabel(
+    `<b style="color:#00FF88;font-size:22px">−${reduction.toFixed(1)}%</b><br>` +
+    `<span style="color:#5090B8;font-size:11px">reduction vs baseline</span>`,
+    '#00FF88', 16
+  ),
+  pos: new THREE.Vector3(xOf(STATE.best_iter) + 1.5, (baselineY + yOf(STATE.best_rth)) / 2, 0),
+});
+
+function updateLabels() {
+  const tmp = new THREE.Vector3();
+  for (const l of labels) {
+    tmp.copy(l.pos).project(camera);
+    const x = (tmp.x * 0.5 + 0.5) * innerWidth;
+    const y = (1 - (tmp.y * 0.5 + 0.5)) * innerHeight;
+    const hidden = tmp.z < -1 || tmp.z > 1;
+    l.el.style.left = `${x}px`;
+    l.el.style.top  = `${y}px`;
+    l.el.style.display = hidden ? 'none' : 'block';
+  }
+}
+
+// ── Render loop ───────────────────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  updateLabels();
+  renderer.render(scene, camera);
+}
+animate();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ── Double-click to request expand from parent dashboard ─────────────────
+document.addEventListener('dblclick', () => {
+  if (window.parent === window) return;
+  window.parent.postMessage({
+    type:  'expand',
+    src:   location.href,
+    title: 'OPTIMIZATION PROGRESS — BEST R_TH OVER ITERATIONS',
+  }, '*');
+});
+
+// ── Cursor-following "double-click to zoom in" hint (iframe + not-expanded) ──
+if (window.parent !== window && !new URLSearchParams(location.search).has('expanded')) {
+  const _hint = document.createElement('div');
+  _hint.textContent = 'double-click to zoom in';
+  _hint.style.cssText =
+    `position:fixed;pointer-events:none;z-index:9999;` +
+    `background:rgba(4,14,28,0.92);border:1px solid #00D8FF;` +
+    `color:#00D8FF;font-size:11px;font-family:'Courier New',monospace;` +
+    `padding:4px 10px;border-radius:4px;letter-spacing:.4px;` +
+    `box-shadow:0 0 12px rgba(0,216,255,0.35);` +
+    `display:none;white-space:nowrap;`;
+  document.body.appendChild(_hint);
+  document.addEventListener('mousemove', (e) => {
+    _hint.style.left = (e.clientX + 16) + 'px';
+    _hint.style.top  = (e.clientY + 16) + 'px';
+    _hint.style.display = 'block';
+  });
+  document.addEventListener('mouseleave', () => { _hint.style.display = 'none'; });
+}
+</script>
+</body>
+</html>

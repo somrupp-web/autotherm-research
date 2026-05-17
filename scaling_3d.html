@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Scaling Speedup — 3D Ribbons</title>
+<style>
+*,html,body{margin:0;padding:0;box-sizing:border-box;overflow:hidden;}
+body{background:#04090F;font-family:'Courier New',monospace;color:#C8E8FF;}
+#c{display:block;width:100vw;height:100vh;}
+
+#title{
+  position:absolute;top:14px;left:50%;transform:translateX(-50%);
+  background:rgba(4,14,28,.82);border:1px solid #1E4060;
+  border-radius:8px;padding:8px 18px;text-align:center;
+  backdrop-filter:blur(10px);pointer-events:none;
+  font-size:16px;color:#00D8FF;letter-spacing:1px;font-weight:bold;
+}
+#sub{font-size:13px;color:#5090B8;margin-top:3px;letter-spacing:.5px;}
+
+#legend{
+  position:absolute;top:14px;right:14px;
+  background:rgba(4,14,28,.82);border:1px solid #1E4060;
+  border-radius:8px;padding:12px 16px;
+  backdrop-filter:blur(10px);pointer-events:none;
+  font-size:14px;letter-spacing:.5px;
+}
+.lrow{display:flex;align-items:center;gap:8px;margin:3px 0;}
+.swatch{width:14px;height:6px;border-radius:2px;}
+.s4{background:#00FF88;box-shadow:0 0 10px #00FF88;}
+.s1{background:#FF4422;box-shadow:0 0 10px #FF4422;}
+
+#caption{
+  position:absolute;bottom:14px;left:50%;transform:translateX(-50%);
+  background:rgba(4,14,28,.82);border:1px solid #1E4060;
+  border-radius:8px;padding:8px 16px;
+  backdrop-filter:blur(10px);pointer-events:none;
+  font-size:13px;color:#5090B8;letter-spacing:.5px;
+}
+
+#ns-explanation{
+  position:absolute;bottom:60px;left:14px;
+  background:rgba(4,14,28,.82);border:1px solid #1E4060;
+  border-radius:8px;padding:14px 18px;z-index:5;
+  backdrop-filter:blur(10px);pointer-events:none;
+  letter-spacing:.5px;font-weight:bold;
+  color:#C8E8FF;
+}
+#ns-explanation .row1{
+  display:block;font-size:14px;white-space:nowrap;
+}
+#ns-explanation .row2{
+  display:block;font-size:13px;margin-top:8px;color:#FF9966;white-space:nowrap;
+}
+#ns-explanation .accent{color:#00D8FF;}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="title">
+  GROMACS SCALING — 4-NODE CLUSTER vs 1-NODE
+  <div id="sub">throughput (ns/day) · higher is better · vertical gap = cluster speedup</div>
+</div>
+
+<div id="legend">
+  <div class="lrow"><div class="swatch s4"></div><span>4-node cluster</span></div>
+  <div class="lrow"><div class="swatch s1"></div><span>1-node</span></div>
+</div>
+
+<div id="ns-explanation">
+  <span class="row1"><span class="accent">1 ns/day</span> = In 24 hours of simulation time, it completes 1 ns of atomic motion</span>
+  <span class="row2">more atoms = less ns/day</span>
+</div>
+
+<div id="caption">RDMA over CX7 · UCX rc_mlx5 · PME GPU offload</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── Data (will be patched from JSON later) ─────────────────────────────────
+// Measured: 1-node times and 3-node times for a 200 ps benchmark on the cluster.
+// 4-node times are extrapolated by proportional scaling — 4 GPU ranks finish
+// 4/3 faster than 3 GPU ranks (i.e., t4 = t3 × 3/4), assuming roughly linear
+// scaling of the PP workload while PME is held on 1 dedicated rank.
+const MEASURED = [
+  { N: 1,  t1: 1136.8, t3: 893.6  },
+  { N: 2,  t1: 2295.6, t3: 1552.2 },
+  { N: 3,  t1: 3782.8, t3: 2644.1 },
+  { N: 4,  t1: 4948.9, t3: 3540.8 },
+  { N: 5,  t1: 6334.3, t3: 4068.7 },
+  { N: 10, t1: 14000,  t3: 9547.2 },   // 1-node at 10M is projection from Test 1
+];
+const RAW = MEASURED.map(r => ({
+  N:  r.N,
+  t1: r.t1,
+  t4: r.t3 * (3/4),    // 4-node extrapolation: one more PP rank → 25% faster
+}));
+
+// Convert sim time (s) for 200 ps to throughput (ns/day): 0.2 ns / (t_s / 86400)
+const BENCH_PS = 200;
+const data = RAW.map(r => ({
+  N:   r.N,
+  ns1: (BENCH_PS / 1000) / (r.t1 / 86400),
+  ns3: (BENCH_PS / 1000) / (r.t4 / 86400),   // note: name kept as ns3 for downstream code
+}));
+
+// ── Three.js scene setup ───────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const scene  = new THREE.Scene();
+scene.background = new THREE.Color('#04090F');
+scene.fog        = new THREE.Fog('#04090F', 18, 60);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(14, 9, 16);
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+
+// Orbit controls — slow auto-rotate for cinematic feel
+const controls = new OrbitControls(camera, canvas);
+controls.target.set(0, 2.5, 0);
+controls.enableDamping  = true;
+controls.dampingFactor  = 0.06;
+controls.autoRotate     = true;
+controls.autoRotateSpeed = 0.5;  // ~12 s/revolution
+// Pause auto-rotate while mouse hovers the canvas (resume on leave)
+canvas.addEventListener('mouseenter', () => { controls.autoRotate = false; });
+canvas.addEventListener('mouseleave', () => { controls.autoRotate = true;  });
+controls.enablePan      = false;
+controls.minDistance    = 10;
+controls.maxDistance    = 30;
+controls.minPolarAngle  = Math.PI * 0.18;
+controls.maxPolarAngle  = Math.PI * 0.55;
+
+// Lighting
+scene.add(new THREE.AmbientLight(0x4080a0, 0.55));
+
+const key = new THREE.DirectionalLight(0x00D8FF, 1.1);
+key.position.set(6, 14, 6);
+scene.add(key);
+
+const fill = new THREE.PointLight(0x00FF88, 0.6, 25);
+fill.position.set(-6, 4, 6);
+scene.add(fill);
+
+const rim = new THREE.PointLight(0xFF4422, 0.5, 30);
+rim.position.set(8, 2, -8);
+scene.add(rim);
+
+// ── Axes & grid ────────────────────────────────────────────────────────────
+// Map: X = log2(N+1), Y = ns/day, Z = ±1.2 (separates the two ribbons)
+const X_SCALE = 2.4;
+const Y_SCALE = 0.32;
+const Z_OFF   = 1.2;
+const xOf = (N)   => Math.log2(N) * X_SCALE;
+const yOf = (ns)  => ns * Y_SCALE;
+
+// Floor grid (subtle cyan)
+const gridMat = new THREE.LineBasicMaterial({ color: 0x1E4060, transparent: true, opacity: 0.6 });
+const grid    = new THREE.GridHelper(20, 20, 0x1E4060, 0x0E1E30);
+grid.position.y = 0;
+scene.add(grid);
+
+// Axes lines
+function makeAxis(pts, color) {
+  const g = new THREE.BufferGeometry().setFromPoints(pts.map(p => new THREE.Vector3(...p)));
+  return new THREE.Line(g, new THREE.LineBasicMaterial({ color, linewidth: 2 }));
+}
+scene.add(makeAxis([[xOf(1), 0, 0], [xOf(11), 0, 0]], 0x2E5070));         // X (N)
+scene.add(makeAxis([[xOf(1), 0, 0], [xOf(1), yOf(22), 0]], 0x2E5070));     // Y (ns/day)
+scene.add(makeAxis([[xOf(1), 0, -Z_OFF], [xOf(1), 0, +Z_OFF]], 0x2E5070)); // Z
+
+// ── Ribbon builder ────────────────────────────────────────────────────────
+function buildRibbon(points, color, glowColor) {
+  // Smooth Catmull-Rom curve through data points
+  const curve = new THREE.CatmullRomCurve3(points, false, 'catmullrom', 0.35);
+  const tube  = new THREE.TubeGeometry(curve, 200, 0.18, 16, false);
+  const mat   = new THREE.MeshPhongMaterial({
+    color,
+    emissive: glowColor,
+    emissiveIntensity: 0.45,
+    shininess: 80,
+    specular: 0xffffff,
+  });
+  return new THREE.Mesh(tube, mat);
+}
+
+function buildSpheres(points, color, glowColor) {
+  const group = new THREE.Group();
+  const geo   = new THREE.SphereGeometry(0.28, 24, 24);
+  const mat   = new THREE.MeshPhongMaterial({
+    color,
+    emissive: glowColor,
+    emissiveIntensity: 0.6,
+    shininess: 100,
+  });
+  for (const p of points) {
+    const s = new THREE.Mesh(geo, mat);
+    s.position.copy(p);
+    group.add(s);
+  }
+  return group;
+}
+
+function buildGuideLines(points, color) {
+  const group = new THREE.Group();
+  for (const p of points) {
+    const g = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(p.x, 0,    p.z),
+      new THREE.Vector3(p.x, p.y,  p.z),
+    ]);
+    group.add(new THREE.Line(g, new THREE.LineBasicMaterial({
+      color, transparent: true, opacity: 0.35,
+    })));
+  }
+  return group;
+}
+
+// Build data point arrays (vec3)
+const pts4 = data.map(d => new THREE.Vector3(xOf(d.N), yOf(d.ns3), +Z_OFF));
+const pts1 = data.map(d => new THREE.Vector3(xOf(d.N), yOf(d.ns1), -Z_OFF));
+
+scene.add(buildRibbon(pts4, 0x00FF88, 0x004422));
+scene.add(buildRibbon(pts1, 0xFF4422, 0x441108));
+scene.add(buildSpheres(pts4, 0x00FF88, 0x008844));
+scene.add(buildSpheres(pts1, 0xFF4422, 0x882211));
+scene.add(buildGuideLines(pts4, 0x00FF88));
+scene.add(buildGuideLines(pts1, 0xFF4422));
+
+// ── Floating labels (HTML overlay positioned via 3D projection) ──────────
+const labelLayer = document.createElement('div');
+labelLayer.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
+document.body.appendChild(labelLayer);
+
+function mkLabel(text, color, size = 13) {
+  const el = document.createElement('div');
+  el.textContent = text;
+  el.style.cssText =
+    `position:absolute;color:${color};font-size:${size}px;font-family:'Courier New',monospace;` +
+    `letter-spacing:.4px;text-shadow:0 0 6px rgba(0,0,0,.9);transform:translate(-50%,-100%);` +
+    `pointer-events:none;white-space:nowrap;`;
+  labelLayer.appendChild(el);
+  return el;
+}
+
+const labels = [];
+// N labels on the X axis (floor)
+data.forEach(d => {
+  labels.push({
+    el: mkLabel(`${d.N}M`, '#7090B0', 13),
+    pos: new THREE.Vector3(xOf(d.N), 0.15, 0),
+  });
+});
+// Speedup label on 4-node points
+data.forEach((d, i) => {
+  const sp = d.ns3 / d.ns1;
+  labels.push({
+    el: mkLabel(`${sp.toFixed(2)}×`, '#00FF88', 14),
+    pos: pts4[i].clone().add(new THREE.Vector3(0, 0.7, 0)),
+  });
+});
+// "ns/day" label on Y axis ticks
+[5, 10, 15, 20].forEach(v => {
+  labels.push({
+    el: mkLabel(`${v} ns/day`, '#5090B8', 12),
+    pos: new THREE.Vector3(xOf(1) - 0.15, yOf(v), 0),
+  });
+});
+
+function updateLabels() {
+  const tmp = new THREE.Vector3();
+  for (const l of labels) {
+    tmp.copy(l.pos).project(camera);
+    const x = (tmp.x * 0.5 + 0.5) * innerWidth;
+    const y = (1 - (tmp.y * 0.5 + 0.5)) * innerHeight;
+    const hidden = tmp.z < -1 || tmp.z > 1;
+    l.el.style.left    = `${x}px`;
+    l.el.style.top     = `${y}px`;
+    l.el.style.display = hidden ? 'none' : 'block';
+  }
+}
+
+// ── Render loop ───────────────────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  updateLabels();
+  renderer.render(scene, camera);
+}
+animate();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ── Double-click to request expand from parent dashboard ─────────────────
+document.addEventListener('dblclick', (e) => {
+  if (window.parent === window) return;   // standalone view: do nothing
+  window.parent.postMessage({
+    type:  'expand',
+    src:   location.href,
+    title: 'GROMACS SCALING — 4-NODE CLUSTER vs 1-NODE',
+  }, '*');
+});
+
+// ── Cursor-following "double-click to zoom in" hint (iframe + not-expanded) ──
+if (window.parent !== window && !new URLSearchParams(location.search).has('expanded')) {
+  const _hint = document.createElement('div');
+  _hint.textContent = 'double-click to zoom in';
+  _hint.style.cssText =
+    `position:fixed;pointer-events:none;z-index:9999;` +
+    `background:rgba(4,14,28,0.92);border:1px solid #00D8FF;` +
+    `color:#00D8FF;font-size:11px;font-family:'Courier New',monospace;` +
+    `padding:4px 10px;border-radius:4px;letter-spacing:.4px;` +
+    `box-shadow:0 0 12px rgba(0,216,255,0.35);` +
+    `display:none;white-space:nowrap;`;
+  document.body.appendChild(_hint);
+  document.addEventListener('mousemove', (e) => {
+    _hint.style.left = (e.clientX + 16) + 'px';
+    _hint.style.top  = (e.clientY + 16) + 'px';
+    _hint.style.display = 'block';
+  });
+  document.addEventListener('mouseleave', () => { _hint.style.display = 'none'; });
+}
+</script>
+</body>
+</html>

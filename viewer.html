@@ -80,7 +80,31 @@ body{background:#04090F;font-family:'Courier New',monospace;}
 .tl{font-size:12.5px;color:#00D8FF;font-weight:bold;letter-spacing:.4px;margin:10px 0 5px;}
 .chart-wrap{width:100%;margin-bottom:8px;}
 .chart-wrap canvas{width:100%;height:auto;display:block;}
+
+/* Cube-only mode (?minimal=1): keep HUD + controls, hide only side panels.
+   Selectors match html.minimal so the class can be applied in <head> before
+   the body renders (prevents a flash of the side panels on load). */
+html.minimal #left-panel,
+html.minimal #right-panel { display: none !important; }
+
+/* Bump fonts in minimal mode for dashboard panel readability */
+html.minimal #rth   { font-size: 26px !important; }
+html.minimal #lbl   { font-size: 14px !important; }
+html.minimal #imp   { font-size: 16px !important; }
+html.minimal .btn   { font-size: 14px !important; padding: 10px 22px !important; }
+html.minimal #ilbl  { font-size: 14px !important; }
+html.minimal #sl    { width: 320px !important; }
 </style>
+<script>
+// Detect ?minimal=1 query parameter and tag <html> SYNCHRONOUSLY so CSS hides
+// the side panels before they ever render (prevents flash on load).
+// document.documentElement (= <html>) exists from the very first parse step,
+// so this is safe to run in <head>.
+// Cube panel intentionally does NOT post expand messages — popup disabled here.
+if (new URLSearchParams(location.search).has('minimal')) {
+  document.documentElement.classList.add('minimal');
+}
+</script>
 </head>
 <body>
 <canvas id="c"></canvas>
@@ -161,6 +185,9 @@ camera.position.set(11, 7.5, 11);
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true; controls.dampingFactor = 0.06;
 controls.autoRotate = true;   controls.autoRotateSpeed = 3.0;
+// Pause auto-rotate while mouse hovers canvas; resume on mouseleave
+canvas.addEventListener('mouseenter', () => { controls.autoRotate = false; });
+canvas.addEventListener('mouseleave', () => { controls.autoRotate = true;  });
 controls.minDistance = 7;     controls.maxDistance = 28;
 controls.target.set(0,0,0);
 

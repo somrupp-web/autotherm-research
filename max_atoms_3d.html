@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Max Atoms — 1 Node vs 4-Node Cluster (3D)</title>
+<style>
+*,html,body{margin:0;padding:0;box-sizing:border-box;overflow:hidden;}
+body{background:#04090F;font-family:'Courier New',monospace;color:#C8E8FF;}
+#c{display:block;width:100vw;height:100vh;}
+
+#title{
+  position:absolute;top:14px;left:50%;transform:translateX(-50%);
+  background:rgba(4,14,28,.82);border:1px solid #1E4060;
+  border-radius:8px;padding:8px 18px;text-align:center;
+  backdrop-filter:blur(10px);pointer-events:none;z-index:5;
+  font-size:16px;color:#00D8FF;letter-spacing:1px;font-weight:bold;
+}
+#sub{font-size:13px;color:#5090B8;margin-top:3px;letter-spacing:.5px;}
+
+#legend{
+  position:absolute;top:14px;left:14px;
+  background:rgba(4,14,28,.82);border:1px solid #1E4060;
+  border-radius:8px;padding:12px 16px;z-index:5;
+  backdrop-filter:blur(10px);pointer-events:none;
+  font-size:14px;letter-spacing:.5px;
+}
+.lrow{display:flex;align-items:center;gap:8px;margin:3px 0;}
+.swatch{width:14px;height:6px;border-radius:2px;}
+.s1{background:#FF4422;box-shadow:0 0 10px #FF4422;}
+.s4{background:#00FF88;box-shadow:0 0 10px #00FF88;}
+
+#stats{
+  position:absolute;top:14px;right:14px;
+  background:rgba(4,14,28,.82);border:1px solid #1E4060;
+  border-radius:8px;padding:12px 16px;z-index:5;
+  backdrop-filter:blur(10px);pointer-events:none;
+  font-size:14px;letter-spacing:.5px;
+}
+.stat-row{display:flex;justify-content:space-between;gap:18px;margin:3px 0;}
+.k{color:#5090B8;}
+.v{color:#00FF88;font-weight:bold;}
+
+#caption{
+  position:absolute;bottom:14px;left:50%;transform:translateX(-50%);
+  background:rgba(4,14,28,.82);border:1px solid #1E4060;
+  border-radius:8px;padding:8px 16px;
+  backdrop-filter:blur(10px);pointer-events:none;
+  font-size:13px;color:#5090B8;letter-spacing:.5px;z-index:5;
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="title">
+  MAX ATOMS CAPACITY — 1 NODE vs 4-NODE CLUSTER
+  <div id="sub">practical limit for GROMACS NVT + PME on DGX Spark GB10</div>
+</div>
+
+<div id="legend">
+  <div class="lrow"><div class="swatch s1"></div><span>1 node</span></div>
+  <div class="lrow"><div class="swatch s4"></div><span>4-node cluster</span></div>
+</div>
+
+<div id="stats">
+  <div class="stat-row"><span class="k">1 node max</span><span class="v" id="s-1n"></span></div>
+  <div class="stat-row"><span class="k">4-node max</span><span class="v" id="s-4n"></span></div>
+  <div class="stat-row"><span class="k">capacity gain</span><span class="v" id="s-gain"></span></div>
+</div>
+
+<div id="caption">RDMA over CX7  ·  PME on dedicated GPU  ·  drag to rotate, scroll to zoom</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── Data ──────────────────────────────────────────────────────────────────
+const DATA = {
+  oneNode:    { label: '1 NODE',         max_atoms: 10_000_000, status: 'verified' },
+  fourNode:   { label: '4-NODE CLUSTER', max_atoms: 30_000_000, status: 'pending'  },
+};
+
+// Populate stats
+document.getElementById('s-1n').textContent  = (DATA.oneNode.max_atoms  / 1e6).toFixed(0) + 'M atoms';
+document.getElementById('s-4n').textContent  = (DATA.fourNode.max_atoms / 1e6).toFixed(0) + 'M atoms';
+document.getElementById('s-gain').textContent = (DATA.fourNode.max_atoms / DATA.oneNode.max_atoms).toFixed(1) + '×';
+
+// ── Three.js scene setup ───────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const scene  = new THREE.Scene();
+scene.background = new THREE.Color('#04090F');
+scene.fog        = new THREE.Fog('#04090F', 22, 70);
+
+const camera = new THREE.PerspectiveCamera(40, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(14, 9, 14);
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+
+// Orbit + auto-rotate
+const controls = new OrbitControls(camera, canvas);
+controls.target.set(0, 3, 0);
+controls.enableDamping   = true;
+controls.dampingFactor   = 0.06;
+controls.autoRotate      = true;
+controls.autoRotateSpeed = 0.5;
+canvas.addEventListener('mouseenter', () => { controls.autoRotate = false; });
+canvas.addEventListener('mouseleave', () => { controls.autoRotate = true;  });
+controls.enablePan       = false;
+controls.minDistance     = 9;
+controls.maxDistance     = 30;
+controls.minPolarAngle   = Math.PI * 0.18;
+controls.maxPolarAngle   = Math.PI * 0.55;
+
+// Lighting
+scene.add(new THREE.AmbientLight(0x4080a0, 0.55));
+const key  = new THREE.DirectionalLight(0x00D8FF, 1.1);  key.position.set(6, 14, 6);  scene.add(key);
+const fill = new THREE.PointLight(0x00FF88, 0.7, 25);    fill.position.set(-6, 4, 6); scene.add(fill);
+const rim  = new THREE.PointLight(0xFF4422, 0.6, 30);    rim.position.set(8, 2, -8);  scene.add(rim);
+
+// Floor grid
+scene.add(new THREE.GridHelper(20, 20, 0x1E4060, 0x0E1E30));
+
+// ── Bar builder ────────────────────────────────────────────────────────────
+// Height scale: 30M atoms = 4.5 units tall (shorter than before so the "30M" label
+// above the 4-node bar doesn't overlap the title bar at the top of the page).
+const MAX_HEIGHT_UNITS = 4.5;
+const MAX_DATA = 30_000_000;
+const yOf = (atoms) => atoms / MAX_DATA * MAX_HEIGHT_UNITS;
+
+const BAR_W = 2.4, BAR_D = 2.4;
+
+function buildBar(xPos, atoms, color, glowColor, animatedTargetHeight) {
+  const targetH = yOf(atoms);
+  const group = new THREE.Group();
+
+  // The main bar (BoxGeometry)
+  const geom = new THREE.BoxGeometry(BAR_W, 1, BAR_D);   // height=1 initially, will scale
+  const mat  = new THREE.MeshPhongMaterial({
+    color, emissive: glowColor, emissiveIntensity: 0.5,
+    shininess: 90, specular: 0xffffff, transparent: true, opacity: 0.92,
+  });
+  const bar = new THREE.Mesh(geom, mat);
+  bar.position.set(xPos, 0.5, 0);   // pivot at base
+  group.add(bar);
+
+  // Wireframe edges for definition
+  const edges    = new THREE.EdgesGeometry(geom);
+  const edgesMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9 });
+  const wf       = new THREE.LineSegments(edges, edgesMat);
+  wf.position.copy(bar.position);
+  group.add(wf);
+
+  // Top cap glow (a flat plane just above the top)
+  const capGeom = new THREE.PlaneGeometry(BAR_W * 1.4, BAR_D * 1.4);
+  const capMat  = new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity: 0.18, side: THREE.DoubleSide,
+  });
+  const cap = new THREE.Mesh(capGeom, capMat);
+  cap.rotation.x = -Math.PI / 2;
+  cap.position.set(xPos, 1.02, 0);
+  group.add(cap);
+
+  scene.add(group);
+  return { group, bar, wf, cap, targetH };
+}
+
+const bar1 = buildBar(-3, DATA.oneNode.max_atoms,  0xFF4422, 0x441108);
+const bar4 = buildBar(+3, DATA.fourNode.max_atoms, 0x00FF88, 0x004422);
+
+// ── Animate bar heights from 0 to target on load ──────────────────────────
+let animProgress = 0;
+const ANIM_DURATION = 1500; // ms
+const animStart = performance.now();
+
+function applyBarHeight(b, h) {
+  b.bar.scale.y = h;
+  b.bar.position.y = h / 2;
+  b.wf.scale.y  = h;
+  b.wf.position.y = h / 2;
+  b.cap.position.y = h + 0.02;
+}
+
+// Initial state: zero
+applyBarHeight(bar1, 0.01);
+applyBarHeight(bar4, 0.01);
+
+// ── Axes & ticks ───────────────────────────────────────────────────────────
+function makeAxis(pts, color) {
+  const g = new THREE.BufferGeometry().setFromPoints(pts.map(p => new THREE.Vector3(...p)));
+  return new THREE.Line(g, new THREE.LineBasicMaterial({ color }));
+}
+// Y axis line at the back
+scene.add(makeAxis([[-6, 0, -1.5], [-6, MAX_HEIGHT_UNITS + 0.5, -1.5]], 0x2E5070));
+
+// Y tick lines + labels at 0, 5M, 10M, 15M, 20M, 25M, 30M
+const TICK_VALUES = [5_000_000, 10_000_000, 15_000_000, 20_000_000, 25_000_000, 30_000_000];
+
+// ── HTML overlay labels ────────────────────────────────────────────────────
+const labelLayer = document.createElement('div');
+labelLayer.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
+document.body.appendChild(labelLayer);
+
+function mkLabel(text, color, size = 13) {
+  const el = document.createElement('div');
+  el.innerHTML = text;
+  el.style.cssText =
+    `position:absolute;color:${color};font-size:${size}px;font-family:'Courier New',monospace;` +
+    `letter-spacing:.4px;text-shadow:0 0 6px rgba(0,0,0,.9);transform:translate(-50%,-100%);` +
+    `pointer-events:none;white-space:nowrap;text-align:center;`;
+  labelLayer.appendChild(el);
+  return el;
+}
+
+const labels = [];
+
+// Tick labels on Y axis
+TICK_VALUES.forEach(v => {
+  // Make a small line in 3D for the tick mark
+  scene.add(makeAxis([[-6, yOf(v), -1.5], [-5.6, yOf(v), -1.5]], 0x2E5070));
+  labels.push({
+    el: mkLabel(`${(v/1e6).toFixed(0)}M`, '#5090B8', 12),
+    pos: new THREE.Vector3(-6.4, yOf(v) + 0.15, -1.5),
+  });
+});
+// "atoms" axis label at top
+labels.push({
+  el: mkLabel('atoms', '#5090B8', 12),
+  pos: new THREE.Vector3(-6.4, MAX_HEIGHT_UNITS + 0.8, -1.5),
+});
+
+// 1-node bar labels
+labels.push({
+  el: mkLabel('<b style="font-size:18px">1 NODE</b>', '#FF4422', 15),
+  pos: new THREE.Vector3(-3, -0.1, 0),
+});
+const lbl1 = mkLabel(
+  `<b style="font-size:22px;color:#FF4422">10M</b><br><span style="color:#7090B0;font-size:12px">atoms (verified)</span>`,
+  '#FF4422', 15
+);
+labels.push({ el: lbl1, pos: new THREE.Vector3(-3, yOf(DATA.oneNode.max_atoms) + 0.7, 0) });
+
+// 4-node bar labels
+labels.push({
+  el: mkLabel('<b style="font-size:18px">4-NODE CLUSTER</b>', '#00FF88', 15),
+  pos: new THREE.Vector3(+3, -0.1, 0),
+});
+const lbl4 = mkLabel(
+  `<b style="font-size:22px;color:#00FF88">30M</b><br><span style="color:#7090B0;font-size:12px">atoms (projected)</span>`,
+  '#00FF88', 15
+);
+labels.push({ el: lbl4, pos: new THREE.Vector3(+3, yOf(DATA.fourNode.max_atoms) + 0.7, 0) });
+
+// Big "3×" capacity gain callout between the bars
+const gain = DATA.fourNode.max_atoms / DATA.oneNode.max_atoms;
+labels.push({
+  el: mkLabel(
+    `<b style="color:#00FF88;font-size:42px;">${gain.toFixed(0)}×</b><br>` +
+    `<span style="color:#5090B8;font-size:13px;letter-spacing:1px">CAPACITY GAIN</span>`,
+    '#00FF88', 30
+  ),
+  pos: new THREE.Vector3(0, yOf(DATA.fourNode.max_atoms) / 2 + 0.5, -2),
+});
+
+// "verified" / "projected" badges below each bar
+labels.push({
+  el: mkLabel('<span style="background:rgba(255,68,34,0.2);border:1px solid #FF4422;padding:3px 8px;border-radius:3px;color:#FF4422;font-size:12px">verified</span>', '#FF4422', 12),
+  pos: new THREE.Vector3(-3, -0.7, 0),
+});
+labels.push({
+  el: mkLabel('<span style="background:rgba(0,255,136,0.2);border:1px solid #00FF88;padding:3px 8px;border-radius:3px;color:#00FF88;font-size:12px">benchmark in progress</span>', '#00FF88', 12),
+  pos: new THREE.Vector3(+3, -0.7, 0),
+});
+
+function updateLabels() {
+  const tmp = new THREE.Vector3();
+  for (const l of labels) {
+    tmp.copy(l.pos).project(camera);
+    const x = (tmp.x * 0.5 + 0.5) * innerWidth;
+    const y = (1 - (tmp.y * 0.5 + 0.5)) * innerHeight;
+    const hidden = tmp.z < -1 || tmp.z > 1;
+    l.el.style.left = `${x}px`;
+    l.el.style.top  = `${y}px`;
+    l.el.style.display = hidden ? 'none' : 'block';
+  }
+}
+
+// ── Render loop ───────────────────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+
+  // Animate bar growth on load
+  const now = performance.now();
+  if (animProgress < 1) {
+    animProgress = Math.min(1, (now - animStart) / ANIM_DURATION);
+    // Ease out cubic
+    const t = 1 - Math.pow(1 - animProgress, 3);
+    applyBarHeight(bar1, Math.max(0.01, bar1.targetH * t));
+    applyBarHeight(bar4, Math.max(0.01, bar4.targetH * t));
+  }
+
+  controls.update();
+  updateLabels();
+  renderer.render(scene, camera);
+}
+animate();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ── Double-click to request expand from parent dashboard ─────────────────
+document.addEventListener('dblclick', () => {
+  if (window.parent === window) return;
+  window.parent.postMessage({
+    type:  'expand',
+    src:   location.href,
+    title: 'MAX ATOMS CAPACITY — 1 NODE vs 4-NODE CLUSTER',
+  }, '*');
+});
+
+// ── Cursor-following "double-click to zoom in" hint (iframe + not-expanded) ──
+if (window.parent !== window && !new URLSearchParams(location.search).has('expanded')) {
+  const _hint = document.createElement('div');
+  _hint.textContent = 'double-click to zoom in';
+  _hint.style.cssText =
+    `position:fixed;pointer-events:none;z-index:9999;` +
+    `background:rgba(4,14,28,0.92);border:1px solid #00D8FF;` +
+    `color:#00D8FF;font-size:11px;font-family:'Courier New',monospace;` +
+    `padding:4px 10px;border-radius:4px;letter-spacing:.4px;` +
+    `box-shadow:0 0 12px rgba(0,216,255,0.35);` +
+    `display:none;white-space:nowrap;`;
+  document.body.appendChild(_hint);
+  document.addEventListener('mousemove', (e) => {
+    _hint.style.left = (e.clientX + 16) + 'px';
+    _hint.style.top  = (e.clientY + 16) + 'px';
+    _hint.style.display = 'block';
+  });
+  document.addEventListener('mouseleave', () => { _hint.style.display = 'none'; });
+}
+</script>
+</body>
+</html>
