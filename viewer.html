@@ -94,16 +94,151 @@ html.minimal #imp   { font-size: 16px !important; }
 html.minimal .btn   { font-size: 14px !important; padding: 10px 22px !important; }
 html.minimal #ilbl  { font-size: 14px !important; }
 html.minimal #sl    { width: 320px !important; }
+
+/* Expanded cube mode (?expanded=1, but NOT minimal): hide left panel entirely,
+   hide cluster telemetry from right panel — show only LLM Live Metrics (TIM
+   composition for the current iteration), with bigger bold text. */
+html.cube-expanded #left-panel { display: none !important; }
+html.cube-expanded #right-panel {
+  width: 32vw !important;
+  padding: 24px 22px 18px !important;
+  pointer-events: auto !important;
+  overflow-y: auto;
+}
+html.cube-expanded #telemetry-section { display: none !important; }
+html.cube-expanded #right-panel > div[style*="flex:1"] { display: none !important; }   /* spacer */
+/* Allow the metrics log to take all remaining vertical space and show more rows */
+html.cube-expanded #panel-metrics {
+  flex: 1 1 auto !important;
+  overflow-y: auto !important;
+  gap: 14px !important;
+  max-height: none !important;
+}
+/* Big & bold LLM Live Metrics */
+html.cube-expanded #right-panel .ptitle { font-size: 20px !important; letter-spacing: 1px; }
+html.cube-expanded #panel-metrics .le   { padding: 16px 18px !important; border-left-width: 5px !important; }
+html.cube-expanded #panel-metrics .lh   { font-size: 20px !important; font-weight: 900 !important; letter-spacing: .5px; }
+html.cube-expanded #panel-metrics .ls   { font-size: 17px !important; font-weight: bold !important; margin-top: 8px !important; }
+html.cube-expanded #panel-metrics .ld   { font-size: 15px !important; font-weight: 600 !important; line-height: 1.6 !important; margin-top: 6px !important; }
+html.cube-expanded #panel-metrics .tl   { font-size: 16px !important; font-weight: bold !important; }
+
+/* ── Expanded-mode overlays: LLM-used label + cube legend (left side) ─── */
+#ce-model, #ce-legend { display: none; }   /* hidden by default — only show in expanded mode */
+html.cube-expanded #ce-model {
+  display: block;
+  position: absolute;
+  top: 90px; left: 22px;
+  width: 26vw; max-width: 420px;
+  background: rgba(4,14,28,0.92);
+  border: 1px solid #1E4060; border-radius: 10px;
+  padding: 16px 20px;
+  backdrop-filter: blur(10px);
+  font-family: 'Courier New', monospace;
+  z-index: 30;
+}
+html.cube-expanded #ce-legend {
+  display: block;
+  position: absolute;
+  bottom: 110px; left: 22px;
+  width: 26vw; max-width: 420px;
+  background: rgba(4,14,28,0.92);
+  border: 1px solid #1E4060; border-radius: 10px;
+  padding: 16px 20px;
+  backdrop-filter: blur(10px);
+  font-family: 'Courier New', monospace;
+  z-index: 30;
+}
+#ce-model .ce-label, #ce-legend .ce-label {
+  font-size: 12px; color: #5090B8; font-weight: bold;
+  letter-spacing: 1.5px; margin-bottom: 8px;
+}
+#ce-model .ce-name { font-size: 22px; color: #00D8FF; font-weight: 900; letter-spacing: .8px; }
+#ce-model .ce-sub  { font-size: 13px; color: #7090B0; font-weight: 600; margin-top: 6px; }
+#ce-legend .ce-row { display: flex; gap: 14px; align-items: flex-start; margin-top: 12px; }
+#ce-legend .ce-row b { color: #C8E8FF; font-size: 16px; font-weight: 900; }
+#ce-legend .ce-swatch {
+  flex: 0 0 22px; width: 22px; height: 22px; border-radius: 4px;
+  margin-top: 3px;
+}
+/* "Cylinder" swatch — outlined rectangle suggests the geometric shape (not a color) */
+#ce-legend .ce-tube {
+  background: transparent;
+  border: 2px solid #C8E8FF;
+  border-radius: 11px;
+  box-sizing: border-box;
+}
+/* "Tube color" swatch — THERM_COLS palette: blue → cyan → yellow → red (no green) */
+#ce-legend .ce-heat {
+  background: linear-gradient(90deg, #0022EE 0%, #0099FF 20%, #00FFCC 40%, #FFCC00 60%, #FF4400 85%, #FF0000 100%);
+  box-shadow: 0 0 10px #FFCC00;
+}
+/* "Heat-path streak" swatch — FIRE palette: bright yellow → orange → red */
+#ce-legend .ce-fire {
+  background: linear-gradient(90deg, #FFEE00, #FF9900, #FF3300, #CC0000);
+  box-shadow: 0 0 10px #FFEE00;
+}
+#ce-legend .ce-desc { font-size: 13px; color: #8AB0D0; font-weight: 600; line-height: 1.55; display: block; margin-top: 4px; }
 </style>
 <script>
 // Detect ?minimal=1 query parameter and tag <html> SYNCHRONOUSLY so CSS hides
 // the side panels before they ever render (prevents flash on load).
 // document.documentElement (= <html>) exists from the very first parse step,
 // so this is safe to run in <head>.
-// Cube panel intentionally does NOT post expand messages — popup disabled here.
-if (new URLSearchParams(location.search).has('minimal')) {
-  document.documentElement.classList.add('minimal');
-}
+(function() {
+  const params    = new URLSearchParams(location.search);
+  const isMinimal = params.has('minimal');
+  const isExpanded= params.has('expanded');
+
+  if (isMinimal) {
+    document.documentElement.classList.add('minimal');
+  }
+  // When this viewer is loaded into the expanded-cube modal we want to hide
+  // the left panel + cluster telemetry, and show only big LLM Live Metrics.
+  if (isExpanded && !isMinimal) {
+    document.documentElement.classList.add('cube-expanded');
+  }
+
+  // Only enable expand-on-double-click + cursor tooltip when this viewer is
+  // running inside the dashboard grid as the cube panel (minimal mode, not
+  // already expanded, and inside an iframe).
+  const inDashboard = (window.parent !== window) && isMinimal && !isExpanded;
+
+  if (inDashboard) {
+    // Double-click expands to fullscreen (sends message to parent dashboard)
+    document.addEventListener('dblclick', (e) => {
+      // Don't trigger if user double-clicks on the cube's own controls
+      if (e.target.closest('button, input, #ctrl')) return;
+      // Reopen the expanded view WITHOUT minimal so the full UI shows
+      const url = new URL(location.href);
+      url.searchParams.delete('minimal');
+      window.parent.postMessage({
+        type:  'expand',
+        src:   url.toString(),
+        title: 'AUTOTHERM TIM — CUBE / FULL VIEWER',
+      }, '*');
+    });
+
+    // Cursor-following "double-click to zoom in" tooltip
+    document.addEventListener('DOMContentLoaded', () => {
+      const _hint = document.createElement('div');
+      _hint.textContent = 'double-click to zoom in';
+      _hint.style.cssText =
+        'position:fixed;pointer-events:none;z-index:9999;' +
+        'background:rgba(4,14,28,0.92);border:1px solid #00D8FF;' +
+        'color:#00D8FF;font-size:11px;font-family:"Courier New",monospace;' +
+        'padding:4px 10px;border-radius:4px;letter-spacing:.4px;' +
+        'box-shadow:0 0 12px rgba(0,216,255,0.35);' +
+        'display:none;white-space:nowrap;';
+      document.body.appendChild(_hint);
+      document.addEventListener('mousemove', (e) => {
+        _hint.style.left = (e.clientX + 16) + 'px';
+        _hint.style.top  = (e.clientY + 16) + 'px';
+        _hint.style.display = 'block';
+      });
+      document.addEventListener('mouseleave', () => { _hint.style.display = 'none'; });
+    });
+  }
+})();
 </script>
 </head>
 <body>
@@ -142,9 +277,47 @@ if (new URLSearchParams(location.search).has('minimal')) {
   <hr class="pdiv">
   <div class="log-area" id="panel-metrics"></div>
   <div style="flex:1 1 auto;min-height:8px;"></div>
-  <div class="ptitle">CLUSTER TELEMETRY</div>
-  <hr class="pdiv">
-  <div class="chart-wrap"><canvas id="gpu-chart" width="560" height="130"></canvas></div>
+  <div id="telemetry-section">
+    <div class="ptitle">CLUSTER TELEMETRY</div>
+    <hr class="pdiv">
+    <div class="chart-wrap"><canvas id="gpu-chart" width="560" height="130"></canvas></div>
+  </div>
+</div>
+
+<!-- ── Expanded-mode overlays (LLM model name + cube legend) ───────────── -->
+<div id="ce-model">
+  <div class="ce-label">LLM USED FOR INFERENCE</div>
+  <div class="ce-name">NVIDIA Nemotron‑Super‑120B</div>
+  <div class="ce-sub">NVFP4 · vLLM serving on DGX Spark GB10</div>
+</div>
+
+<div id="ce-legend">
+  <div class="ce-label">INSIDE THE CUBE</div>
+  <div class="ce-row">
+    <span class="ce-swatch ce-tube"></span>
+    <div>
+      <b>Cylinders = nanotubes</b><br>
+      <span class="ce-desc">Filler particles (graphene/BN flakes) packed inside the polymer matrix —
+      they carry phonons between hot and cold faces.</span>
+    </div>
+  </div>
+  <div class="ce-row">
+    <span class="ce-swatch ce-heat"></span>
+    <div>
+      <b>Color = thermal flux on each tube</b><br>
+      <span class="ce-desc">Painted along a blue → cyan → <b style="color:#FFCC00">yellow</b> → red scale.
+      Most tubes sit in the yellow band (medium-high flux). Tubes that lie along the gradient
+      glow toward red.</span>
+    </div>
+  </div>
+  <div class="ce-row">
+    <span class="ce-swatch ce-fire"></span>
+    <div>
+      <b>Glowing streaks = heat paths</b><br>
+      <span class="ce-desc">Separate bright yellow → orange → red lines that travel along
+      aligned tubes top→bottom — they show where heat actually flows fastest.</span>
+    </div>
+  </div>
 </div>
 
 <script type="importmap">
@@ -800,7 +973,12 @@ function updatePanels(iter){
   const logEl=document.getElementById('panel-log');
   if(logEl) logEl.innerHTML=buildLogHTML(recent,true);
   const metEl=document.getElementById('panel-metrics');
-  if(metEl) metEl.innerHTML=buildLogHTML(vis.slice(-3),false);
+  if(metEl){
+    // Show more rows when the cube is in the expanded popup (no left panel,
+    // wider right column has room for ~10 entries instead of 3).
+    const metCount = document.documentElement.classList.contains('cube-expanded') ? 12 : 3;
+    metEl.innerHTML=buildLogHTML(vis.slice(-metCount),false);
+  }
   const rc=document.getElementById('rth-chart');
   if(rc) drawRthChart(rc,iter);
   const gc=document.getElementById('gpu-chart');
