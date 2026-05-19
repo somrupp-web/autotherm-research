@@ -1246,7 +1246,7 @@ with gr.Blocks(title="AutoTherm TIM Optimizer") as demo:
         # 4-panel dashboard grid (cube + R_th + scaling + max atoms + GPU live)
         gr.HTML(
             '<div style="width:100%;height:calc(100vh - 78px);background:#04090F;">'
-            '<iframe src="http://localhost:7863/dashboard_grid.html" '
+            '<iframe src="http://localhost:7863/dashboard_grid.html?v=3" '
             'style="width:100%;height:100%;border:0;display:block;background:#04090F;" '
             'allow="cross-origin-isolated"></iframe>'
             '</div>',

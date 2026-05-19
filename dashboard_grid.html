@@ -91,20 +91,21 @@ iframe{
 </head>
 <body>
 <div class="grid">
+  <!-- v=N cache-buster query param: bump when any panel HTML changes -->
   <div class="cell cube">
-    <iframe src="viewer.html?minimal=1" loading="eager"></iframe>
+    <iframe src="viewer.html?minimal=1&v=3" loading="eager"></iframe>
   </div>
   <div class="cell rth">
-    <iframe src="rth_graph.html" loading="eager"></iframe>
+    <iframe src="rth_graph.html?v=3" loading="eager"></iframe>
   </div>
   <div class="cell scaling">
-    <iframe src="scaling_3d.html" loading="eager"></iframe>
+    <iframe src="scaling_3d.html?v=3" loading="eager"></iframe>
   </div>
   <div class="cell max-atoms">
-    <iframe src="max_atoms_3d.html" loading="eager"></iframe>
+    <iframe src="max_atoms_3d.html?v=3" loading="eager"></iframe>
   </div>
   <div class="cell gpu">
-    <iframe src="gpu_live_3d.html" loading="eager"></iframe>
+    <iframe src="gpu_live_3d.html?v=3" loading="eager"></iframe>
   </div>
 </div>
 
